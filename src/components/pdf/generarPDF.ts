@@ -1,166 +1,311 @@
-import type { Project, Payroll } from '@/types';
+import type { Project, Payroll } from "@/types";
 
-export async function generarPDF(project: Project, payroll: Payroll) {
-  // Dynamic import to avoid SSR issues
-  const jsPDF = (await import('jspdf')).default;
-  const autoTable = (await import('jspdf-autotable')).default;
+const DAYS: { key: string; label: string }[] = [
+  { key: "lun", label: "Lunes" },
+  { key: "mar", label: "Martes" },
+  { key: "mie", label: "Miércoles" },
+  { key: "jue", label: "Jueves" },
+  { key: "vie", label: "Viernes" },
+  { key: "sab", label: "Sábado" },
+];
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+function getDayDate(weekStart: string, dayIndex: number): string {
+  const d = new Date(weekStart);
+  d.setDate(d.getDate() + dayIndex);
+  return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" });
+}
 
-  const primaryBlue = [30, 58, 138] as [number, number, number];
-  const accentOrange = [234, 88, 12] as [number, number, number];
-  const lightGray = [248, 250, 252] as [number, number, number];
-  const darkText = [30, 41, 59] as [number, number, number];
+export async function generarPDF(
+  project: Project,
+  payroll: Payroll,
+  _attendances?: Record<string, Record<string, boolean>>,
+) {
+  const jsPDF = (await import("jspdf")).default;
+  const autoTable = (await import("jspdf-autotable")).default;
 
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
 
-  // Header background
-  doc.setFillColor(...primaryBlue);
-  doc.rect(0, 0, pageW, 40, 'F');
+  const blue = [30, 64, 175] as [number, number, number];
+  const blueDk = [30, 27, 75] as [number, number, number];
+  const orange = [234, 88, 12] as [number, number, number];
+  const gray50 = [248, 250, 252] as [number, number, number];
+  const gray200 = [226, 232, 240] as [number, number, number];
+  const dark = [15, 23, 42] as [number, number, number];
+  const white = [255, 255, 255] as [number, number, number];
 
-  // Orange accent bar
-  doc.setFillColor(...accentOrange);
-  doc.rect(0, 38, pageW, 3, 'F');
+  const fmt = (n: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(n);
+
+  // ── HEADER BACKGROUND ──────────────────────────────────────────────────────
+  doc.setFillColor(...blue);
+  doc.rect(0, 0, pageW, 45, "F");
+  doc.setFillColor(...orange);
+  doc.rect(0, 43, pageW, 3, "F");
+
+  // Logo placeholder (white rounded square)
+  doc.setFillColor(...white);
+  doc.roundedRect(12, 7, 28, 28, 4, 4, "F");
+  doc.setFontSize(7);
+  doc.setTextColor(...blue);
+  doc.setFont("helvetica", "bold");
+  doc.text("EASY", 17, 19);
+  doc.text("PLASTER", 14.5, 25);
+  doc.setFontSize(5.5);
+  doc.setFont("helvetica", "normal");
+  doc.text("Steel Framing", 15, 30);
 
   // App name
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(20);
-  doc.setFont('helvetica', 'bold');
-  doc.text('PRESUPUESTO OBRA', 15, 16);
+  doc.setTextColor(...white);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(18);
+  doc.text("EasyPlaster", 46, 18);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8.5);
+  doc.setTextColor(186, 207, 255);
+  doc.text("Steel Framing · Control de Obras y Personal", 46, 25);
 
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(148, 163, 184);
-  doc.text('Control de obras y personal', 15, 23);
-
-  // Document title
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(10);
-  doc.text('LIQUIDACIÓN SEMANAL', pageW - 15, 16, { align: 'right' });
-
-  const fecha = new Date().toLocaleDateString('es-AR');
+  // Doc type badge
+  doc.setFillColor(...orange);
+  doc.roundedRect(pageW - 52, 9, 40, 12, 2, 2, "F");
+  doc.setTextColor(...white);
+  doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
-  doc.setTextColor(148, 163, 184);
-  doc.text(`Generado: ${fecha}`, pageW - 15, 23, { align: 'right' });
+  doc.text("LIQUIDACIÓN SEMANAL", pageW - 32, 16.5, { align: "center" });
 
-  // Project info section
-  let y = 52;
+  // ── PROJECT INFO ────────────────────────────────────────────────────────────
+  let y = 55;
+
   doc.setFontSize(14);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...darkText);
-  doc.text(project.name, 15, y);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...dark);
+  doc.text(project.name, 14, y);
 
   if (project.description) {
-    y += 6;
+    y += 5;
     doc.setFontSize(9);
-    doc.setFont('helvetica', 'normal');
+    doc.setFont("helvetica", "normal");
     doc.setTextColor(100, 116, 139);
-    doc.text(project.description, 15, y);
+    doc.text(project.description, 14, y);
   }
 
   y += 8;
 
-  // Week info
-  const weekStart = new Date(payroll.weekStart).toLocaleDateString('es-AR');
-  const weekEnd = new Date(payroll.weekEnd).toLocaleDateString('es-AR');
+  // Week + totals strip
+  const weekStart = new Date(payroll.weekStart).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const weekEnd = new Date(payroll.weekEnd).toLocaleDateString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
 
-  doc.setFillColor(...lightGray);
-  doc.roundedRect(15, y, pageW - 30, 18, 3, 3, 'F');
+  doc.setFillColor(...gray50);
+  doc.roundedRect(14, y, pageW - 28, 22, 3, 3, "F");
+  doc.setDrawColor(...gray200);
+  doc.roundedRect(14, y, pageW - 28, 22, 3, 3, "S");
 
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...darkText);
-  doc.text('Período:', 20, y + 7);
-  doc.setFont('helvetica', 'normal');
-  doc.text(`${weekStart} – ${weekEnd}`, 20, y + 13);
+  // Period
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100, 116, 139);
+  doc.text("PERÍODO", 20, y + 7);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(10);
+  doc.setTextColor(...dark);
+  doc.text(`${weekStart}  →  ${weekEnd}`, 20, y + 15);
 
-  doc.setFont('helvetica', 'bold');
-  doc.text('Total pagado:', pageW / 2, y + 7);
-  doc.setTextColor(...accentOrange);
-  doc.setFontSize(12);
+  // Divider
+  doc.setDrawColor(...gray200);
+  doc.line(pageW / 2, y + 3, pageW / 2, y + 19);
+
+  // Total paid
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(100, 116, 139);
+  doc.text("TOTAL PAGADO", pageW / 2 + 6, y + 7);
+  doc.setFontSize(13);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...orange);
+  doc.text(fmt(payroll.totalPaid), pageW / 2 + 6, y + 16);
+
+  y += 30;
+
+  // ── BUDGET SUMMARY ──────────────────────────────────────────────────────────
+  doc.setFillColor(...blue);
+  doc.roundedRect(14, y, pageW - 28, 18, 3, 3, "F");
+
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...white);
+  doc.text("RESUMEN PRESUPUESTO", 20, y + 7);
+
+  const spent = project.budget - project.budgetRemaining;
+  const pct = ((project.budgetRemaining / project.budget) * 100).toFixed(1);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(186, 207, 255);
   doc.text(
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(payroll.totalPaid),
-    pageW / 2,
-    y + 14
+    `Total: ${fmt(project.budget)}   ·   Gastado: ${fmt(spent)}   ·   Restante: ${fmt(project.budgetRemaining)} (${pct}%)`,
+    20,
+    y + 14,
   );
 
   y += 26;
 
-  // Budget summary
-  doc.setFillColor(...primaryBlue);
-  doc.roundedRect(15, y, pageW - 30, 22, 3, 3, 'F');
-
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.text('RESUMEN PRESUPUESTO', 20, y + 7);
-
-  const budgetUsed = project.budget - project.budgetRemaining;
-  const budgetPct = ((project.budgetRemaining / project.budget) * 100).toFixed(1);
-
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(186, 230, 253);
-
-  const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(n);
-
-  doc.text(`Presupuesto total: ${fmt(project.budget)}`, 20, y + 14);
-  doc.text(`Gastado: ${fmt(budgetUsed)}   Restante: ${fmt(project.budgetRemaining)} (${budgetPct}%)`, 20, y + 20);
-
-  y += 30;
-
-  // Payments table
+  // ── ATTENDANCE TABLE (days worked per employee) ─────────────────────────────
   doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(...darkText);
-  doc.text('Detalle de pagos', 15, y);
-  y += 5;
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...dark);
+  doc.text("Detalle de asistencia y pagos", 14, y);
+  y += 4;
 
-  const tableData = (payroll.payments ?? []).map((p) => [
-    p.employee?.name ?? '-',
-    fmt(p.employee?.dailyRate ?? 0),
-    p.daysWorked.toString(),
-    fmt(p.amount),
-  ]);
+  // Build header: Empleado | Jornal | Lun dd/mm | Mar dd/mm | ... | Días | Total
+  const dayHeaders = DAYS.map(
+    (d, i) => `${d.label}\n${getDayDate(payroll.weekStart, i)}`,
+  );
+  const head = [["Empleado", "Jornal/día", ...dayHeaders, "Días", "Total"]];
+
+  // Build rows from payments + attendance
+  const body = (payroll.payments ?? []).map((p) => {
+    // Get attendance for this employee from payroll attendances if available
+    const empAttendances = (payroll as any).attendances as
+      | Array<{ employeeId: string; day: string; present: boolean }>
+      | undefined;
+    const dayCells = DAYS.map((d) => {
+      if (empAttendances) {
+        const a = empAttendances.find(
+          (a) => a.employeeId === p.employeeId && a.day === d.key,
+        );
+        return a?.present ? "✓" : "–";
+      }
+      // fallback: distribute daysWorked across first N days
+      return "?";
+    });
+    return [
+      p.employee?.name ?? "–",
+      fmt(p.employee?.dailyRate ?? 0),
+      ...dayCells,
+      String(p.daysWorked),
+      fmt(p.amount),
+    ];
+  });
+
+  const foot = [
+    ["", "", "", "", "", "", "", "", "TOTAL", fmt(payroll.totalPaid)],
+  ];
 
   autoTable(doc, {
     startY: y,
-    head: [['Empleado', 'Jornal/día', 'Días trabajados', 'Total a cobrar']],
-    body: tableData,
-    foot: [['', '', 'TOTAL', fmt(payroll.totalPaid)]],
+    head,
+    body,
+    foot,
     headStyles: {
-      fillColor: primaryBlue,
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-      fontSize: 9,
+      fillColor: blue,
+      textColor: white,
+      fontStyle: "bold",
+      fontSize: 7.5,
+      halign: "center",
+      cellPadding: 3,
     },
     footStyles: {
-      fillColor: accentOrange,
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-      fontSize: 10,
+      fillColor: orange,
+      textColor: white,
+      fontStyle: "bold",
+      fontSize: 9,
     },
-    bodyStyles: { fontSize: 9, textColor: darkText },
-    alternateRowStyles: { fillColor: lightGray },
+    bodyStyles: { fontSize: 8, textColor: dark, halign: "center" },
+    alternateRowStyles: { fillColor: gray50 },
     columnStyles: {
-      0: { cellWidth: 70 },
-      1: { cellWidth: 35, halign: 'center' },
-      2: { cellWidth: 40, halign: 'center' },
-      3: { cellWidth: 40, halign: 'right', fontStyle: 'bold' },
+      0: { halign: "left", cellWidth: 36, fontStyle: "bold" },
+      1: { cellWidth: 20 },
+      2: { cellWidth: 16 },
+      3: { cellWidth: 16 },
+      4: { cellWidth: 16 },
+      5: { cellWidth: 16 },
+      6: { cellWidth: 16 },
+      7: { cellWidth: 16 },
+      8: { cellWidth: 12, fontStyle: "bold" },
+      9: { cellWidth: 22, fontStyle: "bold", halign: "right" },
     },
-    margin: { left: 15, right: 15 },
+    margin: { left: 14, right: 14 },
+    didParseCell: (data) => {
+      // Color ✓ green, – gray
+      if (
+        data.section === "body" &&
+        data.column.index >= 2 &&
+        data.column.index <= 7
+      ) {
+        if (data.cell.text[0] === "✓") {
+          data.cell.styles.textColor = [22, 163, 74];
+          data.cell.styles.fontStyle = "bold";
+        } else {
+          data.cell.styles.textColor = [203, 213, 225];
+        }
+      }
+    },
   });
 
-  // Footer
-  const finalY = (doc as any).lastAutoTable.finalY + 10;
-  doc.setDrawColor(226, 232, 240);
-  doc.line(15, finalY, pageW - 15, finalY);
-  doc.setFontSize(7);
-  doc.setTextColor(148, 163, 184);
-  doc.text('Generado con Presupuesto Obra', 15, finalY + 5);
-  doc.text(fecha, pageW - 15, finalY + 5, { align: 'right' });
+  // ── SIGNATURES SECTION ──────────────────────────────────────────────────────
+  const sigY = (doc as any).lastAutoTable.finalY + 14;
 
-  // Save
-  const weekLabel = weekStart.replace(/\//g, '-');
-  doc.save(`liquidacion-${project.name.replace(/\s+/g, '-')}-${weekLabel}.pdf`);
+  if (sigY < pageH - 40) {
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(100, 116, 139);
+    doc.text("FIRMAS DE CONFORMIDAD", 14, sigY);
+
+    const sigW = (pageW - 42) / Math.min(payroll.payments?.length ?? 1, 4);
+    (payroll.payments ?? []).slice(0, 4).forEach((p, i) => {
+      const sx = 14 + i * (sigW + 4);
+      const sy = sigY + 8;
+      doc.setDrawColor(...gray200);
+      doc.line(sx, sy + 14, sx + sigW - 2, sy + 14);
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(...dark);
+      doc.text(p.employee?.name ?? "", sx + (sigW - 2) / 2, sy + 19, {
+        align: "center",
+      });
+      doc.setFontSize(7);
+      doc.setTextColor(100, 116, 139);
+      doc.text(fmt(p.amount), sx + (sigW - 2) / 2, sy + 24, {
+        align: "center",
+      });
+    });
+  }
+
+  // ── FOOTER ──────────────────────────────────────────────────────────────────
+  const fY = pageH - 10;
+  doc.setFillColor(...blue);
+  doc.rect(0, fY - 4, pageW, 14, "F");
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "normal");
+  doc.setTextColor(186, 207, 255);
+  doc.text(
+    "EasyPlaster Steel Framing · Sistema de gestión de obras",
+    14,
+    fY + 2,
+  );
+  doc.text(
+    `Generado: ${new Date().toLocaleDateString("es-AR")}`,
+    pageW - 14,
+    fY + 2,
+    { align: "right" },
+  );
+
+  // ── SAVE ────────────────────────────────────────────────────────────────────
+  const label = new Date(payroll.weekStart)
+    .toLocaleDateString("es-AR")
+    .replace(/\//g, "-");
+  doc.save(
+    `EasyPlaster-${project.name.replace(/\s+/g, "-")}-semana-${label}.pdf`,
+  );
 }
