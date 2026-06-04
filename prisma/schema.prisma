@@ -1,0 +1,81 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  name      String
+  email     String    @unique
+  password  String
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  projects  Project[]
+}
+
+model Project {
+  id               String    @id @default(cuid())
+  name             String
+  description      String?
+  budget           Float
+  budgetRemaining  Float
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  employees        Employee[]
+  payrolls         Payroll[]
+  active           Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model Employee {
+  id          String       @id @default(cuid())
+  name        String
+  dailyRate   Float
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  attendances Attendance[]
+  payments    Payment[]
+  active      Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+}
+
+model Payroll {
+  id          String       @id @default(cuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  weekStart   DateTime
+  weekEnd     DateTime
+  totalPaid   Float        @default(0)
+  status      String       @default("open")
+  attendances Attendance[]
+  payments    Payment[]
+  createdAt   DateTime     @default(now())
+}
+
+model Attendance {
+  id         String   @id @default(cuid())
+  payrollId  String
+  payroll    Payroll  @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  day        String
+  present    Boolean  @default(false)
+
+  @@unique([payrollId, employeeId, day])
+}
+
+model Payment {
+  id         String   @id @default(cuid())
+  payrollId  String
+  payroll    Payroll  @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  daysWorked Int
+  amount     Float
+  createdAt  DateTime @default(now())
+}
