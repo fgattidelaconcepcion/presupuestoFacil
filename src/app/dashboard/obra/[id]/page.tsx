@@ -396,24 +396,21 @@ export default function ObraDetailPage() {
 
       {/* Tabs */}
       <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
-        {(["asistencia", "Asistencia"],
-        ["empleados", "Empleados"],
-        ["historial", "Historial"]).length > 0 &&
-          (
-            [
-              ["asistencia", "Asistencia"],
-              ["empleados", "Empleados"],
-              ["historial", "Historial"],
-            ] as [Tab, string][]
-          ).map(([t, label]) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`flex-1 text-sm py-2 rounded-lg font-medium transition ${tab === t ? "bg-white text-primary-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-            >
-              {label}
-            </button>
-          ))}
+        {(
+          [
+            ["asistencia", "Asistencia"],
+            ["empleados", "Empleados"],
+            ["historial", "Historial"],
+          ] as [Tab, string][]
+        ).map(([t, label]) => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`flex-1 text-sm py-2 rounded-lg font-medium transition ${tab === t ? "bg-white text-primary-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            {label}
+          </button>
+        ))}
       </div>
 
       {/* ASISTENCIA */}
