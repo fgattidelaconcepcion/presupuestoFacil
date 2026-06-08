@@ -12,6 +12,21 @@ interface ProjectDetail extends Project {
   payrolls: Payroll[];
 }
 
+// Interfaz para las props del formulario que ahora está afuera
+interface EmpFormProps {
+  form: {
+    name: string;
+    paymentType: "daily" | "sqm";
+    dailyRate: string;
+    sqmRate: string;
+  };
+  setForm: (f: any) => void;
+  onSave: () => void;
+  onCancel: () => void;
+  loading: boolean;
+  error: string;
+}
+
 export default function ObraDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -261,93 +276,6 @@ export default function ObraDetailPage() {
       0,
     );
   }
-
-  const EmpForm = ({
-    form,
-    setForm,
-    onSave,
-    onCancel,
-    loading,
-    error,
-  }: {
-    form: typeof empForm;
-    setForm: (f: typeof empForm) => void;
-    onSave: () => void;
-    onCancel: () => void;
-    loading: boolean;
-    error: string;
-  }) => (
-    <div className="space-y-3">
-      <input
-        type="text"
-        value={form.name}
-        onChange={(e) => setForm({ ...form, name: e.target.value })}
-        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-        placeholder="Nombre del empleado"
-      />
-      <div className="flex gap-2">
-        <button
-          onClick={() => setForm({ ...form, paymentType: "daily" })}
-          className={`flex-1 py-2 rounded-xl text-sm font-medium border transition ${form.paymentType === "daily" ? "bg-primary-700 text-white border-primary-700" : "border-slate-200 text-slate-600"}`}
-        >
-          💵 Por día
-        </button>
-        <button
-          onClick={() => setForm({ ...form, paymentType: "sqm" })}
-          className={`flex-1 py-2 rounded-xl text-sm font-medium border transition ${form.paymentType === "sqm" ? "bg-primary-700 text-white border-primary-700" : "border-slate-200 text-slate-600"}`}
-        >
-          📐 Por m²
-        </button>
-      </div>
-      {form.paymentType === "daily" ? (
-        <div className="relative">
-          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-            $
-          </span>
-          <input
-            type="number"
-            value={form.dailyRate}
-            onChange={(e) => setForm({ ...form, dailyRate: e.target.value })}
-            min="0"
-            step="0.01"
-            className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-            placeholder="Jornal diario (USD)"
-          />
-        </div>
-      ) : (
-        <div className="relative">
-          <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-            $
-          </span>
-          <input
-            type="number"
-            value={form.sqmRate}
-            onChange={(e) => setForm({ ...form, sqmRate: e.target.value })}
-            min="0"
-            step="0.01"
-            className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-            placeholder="Precio por m² (USD)"
-          />
-        </div>
-      )}
-      {error && <p className="text-red-500 text-xs">{error}</p>}
-      <div className="flex gap-2">
-        <button
-          onClick={onCancel}
-          className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm"
-        >
-          Cancelar
-        </button>
-        <button
-          onClick={onSave}
-          disabled={loading}
-          className="flex-1 py-2 rounded-xl bg-primary-700 text-white text-sm font-semibold disabled:opacity-50"
-        >
-          {loading ? "Guardando..." : "Guardar"}
-        </button>
-      </div>
-    </div>
-  );
 
   if (loading)
     return (
@@ -851,7 +779,7 @@ export default function ObraDetailPage() {
                       <p className="text-xs text-slate-400">
                         {emp.paymentType === "sqm"
                           ? `📐 $${emp.sqmRate}/m²`
-                          : `💵 {formatCurrency(emp.dailyRate)}/día`}
+                          : `💵 ${formatCurrency(emp.dailyRate)}/día`}
                       </p>
                     </div>
                   </div>
@@ -863,11 +791,11 @@ export default function ObraDetailPage() {
                           setEditEmpForm({
                             name: emp.name,
                             paymentType: emp.paymentType,
-                            dailyRate: emp.dailyRate.toString(),
+                            dailyRate: emp.dailyRate?.toString() ?? "",
                             sqmRate: emp.sqmRate?.toString() ?? "",
                           });
                         }}
-                        className="text-slate-300 hover:text-primary-500 transition p-1.5"
+                        className="p-1.5 text-slate-400 hover:text-primary-600 transition"
                       >
                         <svg
                           className="w-4 h-4"
@@ -885,7 +813,7 @@ export default function ObraDetailPage() {
                       </button>
                       <button
                         onClick={() => deleteEmployee(emp.id)}
-                        className="text-slate-300 hover:text-red-500 transition p-1.5"
+                        className="p-1.5 text-slate-400 hover:text-red-500 transition"
                       >
                         <svg
                           className="w-4 h-4"
@@ -911,7 +839,7 @@ export default function ObraDetailPage() {
           {!isFinished && (
             <button
               onClick={() => setShowFinalizar(true)}
-              className="w-full mt-6 py-3 rounded-xl border-2 border-dashed border-red-200 text-red-400 hover:border-red-300 hover:text-red-500 text-sm font-medium transition"
+              className="w-full mt-4 border border-dashed border-red-200 hover:border-red-300 text-red-500 bg-red-50/30 font-medium py-2.5 rounded-xl text-sm transition flex items-center justify-center gap-1.5"
             >
               🏁 Finalizar obra
             </button>
@@ -921,105 +849,140 @@ export default function ObraDetailPage() {
 
       {/* HISTORIAL */}
       {tab === "historial" && (
-        <div>
+        <div className="space-y-2">
           {project.payrolls.filter((p) => p.status === "closed").length ===
           0 ? (
             <div className="text-center py-10">
-              <div className="text-4xl mb-3">📋</div>
-              <p className="text-slate-500 text-sm">
-                No hay semanas cobradas todavía
-              </p>
+              <div className="text-4xl mb-3">📂</div>
+              <p className="text-slate-500 text-sm">No hay semanas pagadas</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {project.payrolls
-                .filter((p) => p.status === "closed")
-                .map((payroll) => (
-                  <div
-                    key={payroll.id}
-                    className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden"
-                  >
-                    <div className="px-4 py-3 flex items-center justify-between border-b border-slate-50">
-                      <div>
-                        <p className="font-semibold text-slate-800 text-sm">
-                          {formatDate(payroll.weekStart)} –{" "}
-                          {formatDate(payroll.weekEnd)}
-                        </p>
-                        <p className="text-xs text-slate-400">
-                          {payroll.payments?.length ?? 0} empleados
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-obra-600 text-base">
-                          {formatCurrency(payroll.totalPaid)}
-                        </span>
-                        <button
-                          onClick={() =>
-                            generarPDF(
-                              project,
-                              payroll,
-                              payroll.attendances ?? [],
-                            )
-                          }
-                          className="flex items-center gap-1 text-xs text-primary-600 hover:text-primary-800 font-medium bg-primary-50 px-2.5 py-1.5 rounded-lg"
-                        >
-                          <svg
-                            className="w-3.5 h-3.5"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-                            />
-                          </svg>
-                          PDF
-                        </button>
-                      </div>
-                    </div>
-                    {payroll.payments && payroll.payments.length > 0 && (
-                      <div className="divide-y divide-slate-50">
-                        {payroll.payments.map((payment) => (
-                          <div
-                            key={payment.id}
-                            className="px-4 py-2.5 flex justify-between items-center"
-                          >
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 font-bold text-xs">
-                                {payment.employee?.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <span className="text-sm text-slate-700">
-                                  {payment.employee?.name}
-                                </span>
-                                {payment.metersTotal > 0 && (
-                                  <span className="text-xs text-slate-400 ml-1">
-                                    · {payment.metersTotal.toFixed(1)}m²
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            <div className="text-right">
-                              <span className="font-semibold text-slate-800 text-sm">
-                                {formatCurrency(payment.amount)}
-                              </span>
-                              <span className="text-xs text-slate-400 block">
-                                {payment.daysWorked} días
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+            project.payrolls
+              .filter((p) => p.status === "closed")
+              .map((p) => (
+                <div
+                  key={p.id}
+                  className="bg-white rounded-xl p-3.5 shadow-sm border border-slate-100 flex items-center justify-between"
+                >
+                  <div>
+                    <p className="font-semibold text-slate-700 text-sm">
+                      Semana {formatDate(p.weekStart)}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      Hasta el {formatDate(p.weekEnd)}
+                    </p>
                   </div>
-                ))}
-            </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold text-slate-800 text-sm">
+                      {formatCurrency(p.totalPaid)}
+                    </span>
+                    <button
+                      onClick={() => generarPDF(project, p)}
+                      className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 transition"
+                      title="Descargar PDF"
+                    >
+                      <svg
+                        className="w-4 h-4"
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                        />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              ))
           )}
         </div>
       )}
     </div>
   );
 }
+
+// COMPONENTE FORMULARIO EXTRAÍDO AFUERA DEL RENDER PRINCIPAL
+// Así React no pierde el focus al escribir un caracter
+const EmpForm = ({
+  form,
+  setForm,
+  onSave,
+  onCancel,
+  loading,
+  error,
+}: EmpFormProps) => (
+  <div className="space-y-3">
+    <input
+      type="text"
+      value={form.name}
+      onChange={(e) => setForm({ ...form, name: e.target.value })}
+      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+      placeholder="Nombre del empleado"
+    />
+    <div className="flex gap-2">
+      <button
+        onClick={() => setForm({ ...form, paymentType: "daily" })}
+        className={`flex-1 py-2 rounded-xl text-sm font-medium border transition ${form.paymentType === "daily" ? "bg-primary-700 text-white border-primary-700" : "border-slate-200 text-slate-600"}`}
+      >
+        💵 Por día
+      </button>
+      <button
+        onClick={() => setForm({ ...form, paymentType: "sqm" })}
+        className={`flex-1 py-2 rounded-xl text-sm font-medium border transition ${form.paymentType === "sqm" ? "bg-primary-700 text-white border-primary-700" : "border-slate-200 text-slate-600"}`}
+      >
+        📐 Por m²
+      </button>
+    </div>
+    {form.paymentType === "daily" ? (
+      <div className="relative">
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+          $
+        </span>
+        <input
+          type="number"
+          value={form.dailyRate}
+          onChange={(e) => setForm({ ...form, dailyRate: e.target.value })}
+          min="0"
+          step="0.01"
+          className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+          placeholder="Jornal diario (USD)"
+        />
+      </div>
+    ) : (
+      <div className="relative">
+        <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+          $
+        </span>
+        <input
+          type="number"
+          value={form.sqmRate}
+          onChange={(e) => setForm({ ...form, sqmRate: e.target.value })}
+          min="0"
+          step="0.01"
+          className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+          placeholder="Precio por m² (USD)"
+        />
+      </div>
+    )}
+    {error && <p className="text-red-500 text-xs">{error}</p>}
+    <div className="flex gap-2">
+      <button
+        onClick={onCancel}
+        className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm"
+      >
+        Cancelar
+      </button>
+      <button
+        onClick={onSave}
+        disabled={loading}
+        className="flex-1 py-2 rounded-xl bg-primary-700 text-white text-sm font-semibold disabled:opacity-50"
+      >
+        {loading ? "Guardando..." : "Guardar"}
+      </button>
+    </div>
+  </div>
+);

@@ -1,25 +1,22 @@
 {
-  "name": "Presupuesto Obra",
-  "short_name": "PresObra",
-  "description": "Control de presupuesto y personal para obras de construcción",
+  "name": "EasyPlaster Steel Framing",
+  "short_name": "EasyPlaster",
+  "description": "Control de presupuesto y personal — EasyPlaster Steel Framing",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#1e3a8a",
-  "theme_color": "#1e3a8a",
+  "background_color": "#1e40af",
+  "theme_color": "#1e40af",
   "orientation": "portrait",
   "icons": [
     {
-      "src": "/icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-512.png",
+      "src": "/logo.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any maskable"
     }
   ],
-  "categories": ["business", "productivity"]
+  "categories": [
+    "business",
+    "productivity"
+  ]
 }
