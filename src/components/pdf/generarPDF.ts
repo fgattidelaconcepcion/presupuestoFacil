@@ -1,4 +1,4 @@
-﻿import type { Project, Payroll, Attendance } from ''@/types';
+﻿import type { Project, Payroll, Attendance } from '@/types';
 
 const DAYS: { key: string; label: string }[] = [
   { key: 'lun', label: 'Lunes' },
@@ -166,4 +166,5 @@ export async function generarPDF(
   const label = new Date(payroll.weekStart).toLocaleDateString('es-AR').replace(/\//g, '-');
   doc.save(`EasyPlaster-${project.name.replace(/\s+/g, '-')}-semana-${label}.pdf`);
 }
+
 
