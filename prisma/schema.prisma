@@ -23,6 +23,7 @@ model Project {
   description      String?
   budget           Float
   budgetRemaining  Float
+  status           String    @default("active")
   userId           String
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   employees        Employee[]
@@ -33,15 +34,17 @@ model Project {
 }
 
 model Employee {
-  id          String       @id @default(cuid())
-  name        String
-  dailyRate   Float
-  projectId   String
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  attendances Attendance[]
-  payments    Payment[]
-  active      Boolean      @default(true)
-  createdAt   DateTime     @default(now())
+  id           String       @id @default(cuid())
+  name         String
+  dailyRate    Float        @default(0)
+  paymentType  String       @default("daily")
+  sqmRate      Float?
+  projectId    String
+  project      Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  attendances  Attendance[]
+  payments     Payment[]
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
 }
 
 model Payroll {
@@ -58,13 +61,14 @@ model Payroll {
 }
 
 model Attendance {
-  id         String   @id @default(cuid())
-  payrollId  String
-  payroll    Payroll  @relation(fields: [payrollId], references: [id], onDelete: Cascade)
-  employeeId String
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  day        String
-  present    Boolean  @default(false)
+  id           String   @id @default(cuid())
+  payrollId    String
+  payroll      Payroll  @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  employeeId   String
+  employee     Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  day          String
+  present      Boolean  @default(false)
+  metersWorked Float?
 
   @@unique([payrollId, employeeId, day])
 }
@@ -76,6 +80,9 @@ model Payment {
   employeeId String
   employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   daysWorked Int
+  metersTotal Float   @default(0)
   amount     Float
   createdAt  DateTime @default(now())
 }
+
+
