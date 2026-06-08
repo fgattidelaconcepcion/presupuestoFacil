@@ -668,10 +668,12 @@ export default function ObraDetailPage() {
                 <div className="flex items-center justify-between mb-3">
                   <div>
                     <p className="text-sm font-semibold text-slate-700">
-                      Cerrar semana y pagar
+                      Cerrar semana
                     </p>
                     <p className="text-xs text-slate-400">
-                      Se descontará {formatCurrency(weekTotal)} del presupuesto
+                      {weekTotal > 0
+                        ? `Se descontará ${formatCurrency(weekTotal)} del presupuesto`
+                        : "Semana sin días trabajados — se cerrará sin costo"}
                     </p>
                   </div>
                   <span className="text-xl font-bold text-obra-600">
@@ -680,7 +682,7 @@ export default function ObraDetailPage() {
                 </div>
                 <button
                   onClick={cobrarSemana}
-                  disabled={cobrandoSemana || weekTotal === 0}
+                  disabled={cobrandoSemana}
                   className="w-full bg-obra-500 hover:bg-obra-600 disabled:opacity-40 text-white font-bold py-3 rounded-xl text-base flex items-center justify-center gap-2"
                 >
                   {cobrandoSemana ? (
@@ -688,8 +690,10 @@ export default function ObraDetailPage() {
                       <span className="animate-spin w-4 h-4 rounded-full border-2 border-white border-t-transparent" />
                       Procesando...
                     </>
-                  ) : (
+                  ) : weekTotal > 0 ? (
                     <>💰 Cobrar semana — {formatCurrency(weekTotal)}</>
+                  ) : (
+                    <>📅 Cerrar semana libre</>
                   )}
                 </button>
               </div>
@@ -881,7 +885,13 @@ export default function ObraDetailPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="font-bold text-slate-800 text-sm">
-                    {formatCurrency(p.totalPaid)}
+                    {p.totalPaid > 0 ? (
+                      formatCurrency(p.totalPaid)
+                    ) : (
+                      <span className="text-slate-400 font-medium text-xs bg-slate-100 px-2 py-0.5 rounded-full">
+                        Semana libre
+                      </span>
+                    )}
                   </span>
                   <button
                     onClick={() => generarPDF(project, p, p.attendances || [])}

@@ -1,7 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 
 async function getProjectOrFail(id: string, userId: string) {
   const project = await prisma.project.findFirst({ where: { id, userId } });
@@ -9,17 +9,21 @@ async function getProjectOrFail(id: string, userId: string) {
   return project;
 }
 
-export async function GET(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const userId = (session.user as { id?: string }).id!;
 
   const project = await prisma.project.findFirst({
     where: { id: params.id, userId },
     include: {
-      employees: { where: { active: true }, orderBy: { createdAt: 'asc' } },
+      employees: { where: { active: true }, orderBy: { createdAt: "asc" } },
       payrolls: {
-        orderBy: { weekStart: 'desc' },
+        orderBy: { weekStart: "desc" },
         include: {
           payments: { include: { employee: true } },
         },
@@ -27,38 +31,61 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     },
   });
 
-  if (!project) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+  if (!project)
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
   return NextResponse.json(project);
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: { id: string } },
+) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const userId = (session.user as { id?: string }).id!;
 
   const existing = await getProjectOrFail(params.id, userId);
-  if (!existing) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+  if (!existing)
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
   const body = await req.json();
+
+  // Si se cambia el presupuesto, ajustar budgetRemaining proporcionalmente
+  const updateData: Record<string, unknown> = {
+    name: body.name ?? existing.name,
+    description: body.description ?? existing.description,
+    budget: body.budget ?? existing.budget,
+  };
+
+  if (body.budget !== undefined && body.budget !== existing.budget) {
+    const diff = body.budget - existing.budget;
+    updateData.budgetRemaining = Math.max(0, existing.budgetRemaining + diff);
+  }
+
   const project = await prisma.project.update({
     where: { id: params.id },
-    data: {
-      name: body.name ?? existing.name,
-      description: body.description ?? existing.description,
-      budget: body.budget ?? existing.budget,
-    },
+    data: updateData,
   });
   return NextResponse.json(project);
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: { id: string } },
+) {
   const session = await getServerSession(authOptions);
-  if (!session?.user) return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session?.user)
+    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
   const userId = (session.user as { id?: string }).id!;
 
   const existing = await getProjectOrFail(params.id, userId);
-  if (!existing) return NextResponse.json({ error: 'No encontrado' }, { status: 404 });
+  if (!existing)
+    return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  await prisma.project.update({ where: { id: params.id }, data: { active: false } });
+  await prisma.project.update({
+    where: { id: params.id },
+    data: { active: false },
+  });
   return NextResponse.json({ ok: true });
 }
