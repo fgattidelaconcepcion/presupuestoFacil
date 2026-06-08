@@ -1,8 +1,8 @@
-﻿'use client';
+'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { formatCurrency } from ''@/lib/utils';
-import type { Project } from ''@/types';
+import { formatCurrency } from '@/lib/utils';
+import type { Project } from '@/types';
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState<Project[]>([]);
