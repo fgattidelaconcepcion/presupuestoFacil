@@ -846,59 +846,66 @@ export default function ObraDetailPage() {
           )}
         </div>
       )}
-
       {/* HISTORIAL */}
       {tab === "historial" && (
         <div className="space-y-2">
-          {project.payrolls.filter((p) => p.status === "closed").length ===
-          0 ? (
-            <div className="text-center py-10">
-              <div className="text-4xl mb-3">📂</div>
-              <p className="text-slate-500 text-sm">No hay semanas pagadas</p>
-            </div>
-          ) : (
-            project.payrolls
-              .filter((p) => p.status === "closed")
-              .map((p) => (
-                <div
-                  key={p.id}
-                  className="bg-white rounded-xl p-3.5 shadow-sm border border-slate-100 flex items-center justify-between"
-                >
-                  <div>
-                    <p className="font-semibold text-slate-700 text-sm">
-                      Semana {formatDate(p.weekStart)}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      Hasta el {formatDate(p.weekEnd)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-bold text-slate-800 text-sm">
-                      {formatCurrency(p.totalPaid)}
-                    </span>
-                    <button
-                      onClick={() => generarPDF(project, p)}
-                      className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 transition"
-                      title="Descargar PDF"
-                    >
-                      <svg
-                        className="w-4 h-4"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                        />
-                      </svg>
-                    </button>
-                  </div>
+          {(() => {
+            // Filtramos las semanas cerradas una sola vez para mejorar rendimiento
+            const closedPayrolls = project.payrolls.filter(
+              (p) => p.status === "closed",
+            );
+
+            if (closedPayrolls.length === 0) {
+              return (
+                <div className="text-center py-10">
+                  <div className="text-4xl mb-3">📂</div>
+                  <p className="text-slate-500 text-sm">
+                    No hay semanas pagadas
+                  </p>
                 </div>
-              ))
-          )}
+              );
+            }
+
+            return closedPayrolls.map((p) => (
+              <div
+                key={p.id}
+                className="bg-white rounded-xl p-3.5 shadow-sm border border-slate-100 flex items-center justify-between"
+              >
+                <div>
+                  <p className="font-semibold text-slate-700 text-sm">
+                    Semana {formatDate(p.weekStart)}
+                  </p>
+                  <p className="text-xs text-slate-400">
+                    Hasta el {formatDate(p.weekEnd)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="font-bold text-slate-800 text-sm">
+                    {formatCurrency(p.totalPaid)}
+                  </span>
+                  <button
+                    onClick={() => generarPDF(project, p, p.attendances || [])}
+                    className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 transition"
+                    title="Descargar PDF"
+                  >
+                    <svg
+                      className="w-4 h-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                      />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            ));
+          })()}
         </div>
       )}
     </div>
