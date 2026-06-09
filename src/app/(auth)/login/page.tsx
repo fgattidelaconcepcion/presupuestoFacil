@@ -22,8 +22,13 @@ export default function LoginPage() {
       redirect: false,
     });
     setLoading(false);
-    if (res?.error) setError("Email o contraseña incorrectos");
-    else {
+    if (res?.error) {
+      setError(
+        res.error.includes("Demasiados")
+          ? "Demasiados intentos. Esperá un minuto."
+          : "Email o contraseña incorrectos",
+      );
+    } else {
       router.push("/dashboard");
       router.refresh();
     }
