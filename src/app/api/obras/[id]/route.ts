@@ -9,6 +9,7 @@ const updateSchema = z.object({
   description: z.string().nullable().optional(),
   budget: z.number().positive().optional(),
 });
+
 async function getProjectOrFail(id: string, userId: string) {
   const project = await prisma.project.findFirst({ where: { id, userId } });
   if (!project) return null;
@@ -34,6 +35,7 @@ export async function GET(
           payments: { include: { employee: true } },
         },
       },
+      expenses: { orderBy: { date: "desc" } },
     },
   });
 
