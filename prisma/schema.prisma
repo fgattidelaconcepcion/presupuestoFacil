@@ -28,6 +28,7 @@ model Project {
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   employees        Employee[]
   payrolls         Payroll[]
+  expenses         Expense[]
   active           Boolean   @default(true)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -85,4 +86,12 @@ model Payment {
   createdAt  DateTime @default(now())
 }
 
-
+model Expense {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  description String
+  amount      Float
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+}

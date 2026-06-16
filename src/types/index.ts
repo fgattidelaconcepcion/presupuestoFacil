@@ -10,7 +10,7 @@ export interface Project {
   description?: string;
   budget: number;
   budgetRemaining: number;
-  status: 'active' | 'finished';
+  status: "active" | "finished";
   active: boolean;
   createdAt: string;
   employeeCount?: number;
@@ -20,7 +20,7 @@ export interface Employee {
   id: string;
   name: string;
   dailyRate: number;
-  paymentType: 'daily' | 'sqm';
+  paymentType: "daily" | "sqm";
   sqmRate?: number;
   projectId: string;
   active: boolean;
@@ -32,7 +32,7 @@ export interface Payroll {
   weekStart: string;
   weekEnd: string;
   totalPaid: number;
-  status: 'open' | 'closed';
+  status: "open" | "closed";
   createdAt: string;
   payments?: Payment[];
   attendances?: Attendance[];
@@ -57,3 +57,11 @@ export interface Payment {
   employee?: Employee;
 }
 
+export interface Expense {
+  id: string;
+  projectId: string;
+  description: string;
+  amount: number;
+  date: string;
+  createdAt: string;
+}

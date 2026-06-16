@@ -3,16 +3,19 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatCurrency, formatDate, DAYS_OF_WEEK } from "@/lib/utils";
-import type { Project, Employee, Payroll, Attendance } from "@/types";
+import type { Project, Employee, Payroll, Attendance, Expense } from "@/types";
 import { generarPDF } from "@/components/pdf/generarPDF";
+import { generarPDFGastos } from "@/components/pdf/generarPDFGastos";
+import { generarPDFBalance } from "@/components/pdf/generarPDFBalance";
 
-type Tab = "asistencia" | "empleados" | "historial";
+type Tab = "asistencia" | "empleados" | "gastos" | "historial";
+
 interface ProjectDetail extends Project {
   employees: Employee[];
   payrolls: Payroll[];
+  expenses: Expense[];
 }
 
-// Interfaz para las props del formulario que ahora está afuera
 interface EmpFormProps {
   form: {
     name: string;
@@ -64,6 +67,16 @@ export default function ObraDetailPage() {
   const [obraLoading, setObraLoading] = useState(false);
   const [showFinalizar, setShowFinalizar] = useState(false);
   const [finalizando, setFinalizando] = useState(false);
+
+  // Gastos extras state
+  const [showGastoForm, setShowGastoForm] = useState(false);
+  const [gastoForm, setGastoForm] = useState({
+    description: "",
+    amount: "",
+    date: new Date().toISOString().split("T")[0],
+  });
+  const [gastoLoading, setGastoLoading] = useState(false);
+  const [gastoError, setGastoError] = useState("");
 
   const fetchProject = useCallback(async () => {
     const res = await fetch(`/api/obras/${id}`);
@@ -179,9 +192,9 @@ export default function ObraDetailPage() {
     if (!project) return;
     setFinalizando(true);
     await fetch(`/api/obras/${project.id}/finalizar`, { method: "POST" });
+    await fetchProject();
     setFinalizando(false);
     setShowFinalizar(false);
-    router.push("/dashboard");
   }
 
   async function addEmployee() {
@@ -255,6 +268,41 @@ export default function ObraDetailPage() {
     fetchProject();
   }
 
+  async function addGasto() {
+    if (!project) return;
+    setGastoLoading(true);
+    setGastoError("");
+    const res = await fetch("/api/gastos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        description: gastoForm.description,
+        amount: parseFloat(gastoForm.amount),
+        date: gastoForm.date,
+      }),
+    });
+    const data = await res.json();
+    setGastoLoading(false);
+    if (!res.ok) {
+      setGastoError(data.error ?? "Error al guardar el gasto");
+      return;
+    }
+    setGastoForm({
+      description: "",
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+    });
+    setShowGastoForm(false);
+    fetchProject();
+  }
+
+  async function deleteGasto(gastoId: string) {
+    if (!confirm("¿Eliminar este gasto extra?")) return;
+    await fetch(`/api/gastos/${gastoId}`, { method: "DELETE" });
+    fetchProject();
+  }
+
   function calcEmpWeekTotal(emp: Employee): number {
     if (!attendances[emp.id]) return 0;
     if (emp.paymentType === "sqm" && emp.sqmRate) {
@@ -291,6 +339,10 @@ export default function ObraDetailPage() {
   );
   const weekTotal = calcWeekTotal();
   const isFinished = project.status === "finished";
+  const totalExpenses = (project.expenses ?? []).reduce(
+    (s, e) => s + e.amount,
+    0,
+  );
 
   return (
     <div>
@@ -357,7 +409,7 @@ export default function ObraDetailPage() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* ─── MODALS ─────────────────────────────────────────── */}
       {editingObra && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
@@ -439,8 +491,8 @@ export default function ObraDetailPage() {
               ¿Finalizar esta obra?
             </h3>
             <p className="text-sm text-slate-500 text-center mb-5">
-              La obra quedará marcada como finalizada. El historial y los datos
-              se conservan para siempre.
+              La obra quedará marcada como finalizada. Se guardará el balance
+              completo con empleados y gastos extras.
             </p>
             <div className="flex gap-2">
               <button
@@ -461,7 +513,7 @@ export default function ObraDetailPage() {
         </div>
       )}
 
-      {/* Budget card */}
+      {/* ─── BUDGET CARD ────────────────────────────────────── */}
       <div className="bg-gradient-to-br from-primary-800 to-primary-900 rounded-2xl p-4 mb-4 text-white shadow-md">
         <div className="flex justify-between items-start mb-3">
           <div>
@@ -491,28 +543,102 @@ export default function ObraDetailPage() {
           </span>
           <span>{budgetPct.toFixed(0)}% restante</span>
         </div>
+        {totalExpenses > 0 && (
+          <div className="mt-2 pt-2 border-t border-primary-700 flex justify-between text-xs text-primary-300">
+            <span>Gastos extras: {formatCurrency(totalExpenses)}</span>
+            <span>
+              Personal:{" "}
+              {formatCurrency(
+                project.budget - project.budgetRemaining - totalExpenses,
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4">
+      {/* ─── BALANCE FINAL (when finished) ──────────────────── */}
+      {isFinished && (
+        <div className="bg-gradient-to-br from-emerald-700 to-emerald-900 rounded-2xl p-4 mb-4 text-white shadow-md">
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-emerald-300 text-xs font-medium uppercase tracking-wide">
+                🏁 Obra finalizada
+              </p>
+              <p className="text-sm font-semibold text-white mt-0.5">
+                Balance registrado
+              </p>
+            </div>
+            <button
+              onClick={() => generarPDFBalance(project as any)}
+              className="flex items-center gap-1.5 bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-2 rounded-xl transition"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                />
+              </svg>
+              PDF Balance
+            </button>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="bg-white/10 rounded-xl p-2">
+              <p className="text-emerald-300 text-xs">Personal</p>
+              <p className="text-white font-bold text-sm">
+                {formatCurrency(
+                  project.budget - project.budgetRemaining - totalExpenses,
+                )}
+              </p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-2">
+              <p className="text-emerald-300 text-xs">Gastos extras</p>
+              <p className="text-white font-bold text-sm">
+                {formatCurrency(totalExpenses)}
+              </p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-2">
+              <p className="text-emerald-300 text-xs">Saldo final</p>
+              <p className="text-white font-bold text-sm">
+                {formatCurrency(project.budgetRemaining)}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── TABS ───────────────────────────────────────────── */}
+      <div className="flex gap-1 bg-slate-100 p-1 rounded-xl mb-4 overflow-x-auto">
         {(
           [
             ["asistencia", "Asistencia"],
             ["empleados", "Empleados"],
+            ["gastos", "Gastos"],
             ["historial", "Historial"],
           ] as [Tab, string][]
         ).map(([t, label]) => (
           <button
             key={t}
             onClick={() => setTab(t)}
-            className={`flex-1 text-sm py-2 rounded-lg font-medium transition ${tab === t ? "bg-white text-primary-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+            className={`flex-1 text-xs sm:text-sm py-2 px-2 rounded-lg font-medium transition whitespace-nowrap ${tab === t ? "bg-white text-primary-700 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
           >
             {label}
+            {t === "gastos" && (project.expenses ?? []).length > 0 && (
+              <span className="ml-1 bg-red-100 text-red-600 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                {(project.expenses ?? []).length}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* ASISTENCIA */}
+      {/* ─── TAB: ASISTENCIA ────────────────────────────────── */}
       {tab === "asistencia" && (
         <div>
           {isFinished ? (
@@ -702,7 +828,7 @@ export default function ObraDetailPage() {
         </div>
       )}
 
-      {/* EMPLEADOS */}
+      {/* ─── TAB: EMPLEADOS ─────────────────────────────────── */}
       {tab === "empleados" && (
         <div>
           <div className="flex items-center justify-between mb-3">
@@ -850,11 +976,231 @@ export default function ObraDetailPage() {
           )}
         </div>
       )}
-      {/* HISTORIAL */}
+
+      {/* ─── TAB: GASTOS EXTRAS ─────────────────────────────── */}
+      {tab === "gastos" && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-600">
+                {(project.expenses ?? []).length} gasto
+                {(project.expenses ?? []).length !== 1 ? "s" : ""} extra
+                {(project.expenses ?? []).length !== 1 ? "s" : ""}
+              </p>
+              {totalExpenses > 0 && (
+                <p className="text-xs text-red-500 font-medium">
+                  {formatCurrency(totalExpenses)} total
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              {(project.expenses ?? []).length > 0 && (
+                <button
+                  onClick={() =>
+                    generarPDFGastos(project, project.expenses ?? [])
+                  }
+                  className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-700 font-medium border border-slate-200 px-2.5 py-1.5 rounded-lg transition"
+                >
+                  <svg
+                    className="w-3.5 h-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  PDF
+                </button>
+              )}
+              {!isFinished && (
+                <button
+                  onClick={() => {
+                    setShowGastoForm(true);
+                    setGastoError("");
+                  }}
+                  className="flex items-center gap-1 text-sm text-primary-700 font-semibold"
+                >
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2.5}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                  Agregar
+                </button>
+              )}
+            </div>
+          </div>
+
+          {showGastoForm && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-red-100 mb-3">
+              <h4 className="font-semibold text-slate-700 mb-3 text-sm">
+                Nuevo gasto extra
+              </h4>
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={gastoForm.description}
+                  onChange={(e) =>
+                    setGastoForm((p) => ({ ...p, description: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-400 text-sm"
+                  placeholder="Descripción del gasto (ej: materiales, herramientas...)"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      value={gastoForm.amount}
+                      onChange={(e) =>
+                        setGastoForm((p) => ({ ...p, amount: e.target.value }))
+                      }
+                      min="0"
+                      step="0.01"
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-400 text-sm"
+                      placeholder="Monto (USD)"
+                    />
+                  </div>
+                  <input
+                    type="date"
+                    value={gastoForm.date}
+                    onChange={(e) =>
+                      setGastoForm((p) => ({ ...p, date: e.target.value }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-400 text-sm"
+                  />
+                </div>
+                {gastoError && (
+                  <p className="text-red-500 text-xs">{gastoError}</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowGastoForm(false);
+                      setGastoError("");
+                      setGastoForm({
+                        description: "",
+                        amount: "",
+                        date: new Date().toISOString().split("T")[0],
+                      });
+                    }}
+                    className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={addGasto}
+                    disabled={
+                      gastoLoading ||
+                      !gastoForm.description ||
+                      !gastoForm.amount
+                    }
+                    className="flex-1 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold disabled:opacity-50"
+                  >
+                    {gastoLoading ? "Guardando..." : "Guardar gasto"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {(project.expenses ?? []).length === 0 ? (
+            <div className="text-center py-10">
+              <div className="text-4xl mb-3">🧾</div>
+              <p className="text-slate-500 text-sm">
+                No hay gastos extras registrados
+              </p>
+              {!isFinished && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Registrá materiales, herramientas u otros costos
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {(project.expenses ?? []).map((expense) => (
+                <div
+                  key={expense.id}
+                  className="bg-white rounded-xl p-3.5 shadow-sm border border-slate-100 flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-9 h-9 rounded-full bg-red-100 flex items-center justify-center text-red-600 font-bold text-sm shrink-0">
+                      🧾
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-medium text-slate-800 text-sm truncate">
+                        {expense.description}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {new Date(expense.date).toLocaleDateString("es-AR", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                        })}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <span className="font-bold text-red-600 text-sm">
+                      {formatCurrency(expense.amount)}
+                    </span>
+                    {!isFinished && (
+                      <button
+                        onClick={() => deleteGasto(expense.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 transition"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              {/* Totals row */}
+              <div className="bg-red-50 rounded-xl p-3.5 border border-red-100 flex justify-between items-center">
+                <span className="text-sm font-semibold text-red-700">
+                  Total gastos extras
+                </span>
+                <span className="text-lg font-bold text-red-700">
+                  {formatCurrency(totalExpenses)}
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── TAB: HISTORIAL ─────────────────────────────────── */}
       {tab === "historial" && (
         <div className="space-y-2">
           {(() => {
-            // Filtramos las semanas cerradas una sola vez para mejorar rendimiento
             const closedPayrolls = project.payrolls.filter(
               (p) => p.status === "closed",
             );
@@ -922,8 +1268,6 @@ export default function ObraDetailPage() {
   );
 }
 
-// COMPONENTE FORMULARIO EXTRAÍDO AFUERA DEL RENDER PRINCIPAL
-// Así React no pierde el focus al escribir un caracter
 const EmpForm = ({
   form,
   setForm,
