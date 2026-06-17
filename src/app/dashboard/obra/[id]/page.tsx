@@ -3,7 +3,14 @@ import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { formatCurrency, formatDate, DAYS_OF_WEEK } from "@/lib/utils";
-import type { Project, Employee, Payroll, Attendance, Expense } from "@/types";
+import type {
+  Project,
+  Employee,
+  Payroll,
+  Attendance,
+  Expense,
+  Payment,
+} from "@/types";
 import { generarPDF } from "@/components/pdf/generarPDF";
 import { generarPDFGastos } from "@/components/pdf/generarPDFGastos";
 import { generarPDFBalance } from "@/components/pdf/generarPDFBalance";
@@ -12,7 +19,7 @@ type Tab = "asistencia" | "empleados" | "gastos" | "historial";
 
 interface ProjectDetail extends Project {
   employees: Employee[];
-  payrolls: Payroll[];
+  payrolls: (Payroll & { payments?: Payment[] })[];
   expenses: Expense[];
 }
 
@@ -186,6 +193,19 @@ export default function ObraDetailPage() {
     setAttendances({});
     setTab("historial");
     setCobrandoSemana(false);
+  }
+
+  async function reabrirSemana(payrollId: string) {
+    const res = await fetch(`/api/semanas/${payrollId}/reabrir`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error ?? "Error al reabrir la semana");
+      return;
+    }
+    await fetchProject();
+    setTab("asistencia");
   }
 
   async function finalizarObra() {
@@ -1217,49 +1237,13 @@ export default function ObraDetailPage() {
             }
 
             return closedPayrolls.map((p) => (
-              <div
+              <HistorialCard
                 key={p.id}
-                className="bg-white rounded-xl p-3.5 shadow-sm border border-slate-100 flex items-center justify-between"
-              >
-                <div>
-                  <p className="font-semibold text-slate-700 text-sm">
-                    Semana {formatDate(p.weekStart)}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    Hasta el {formatDate(p.weekEnd)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="font-bold text-slate-800 text-sm">
-                    {p.totalPaid > 0 ? (
-                      formatCurrency(p.totalPaid)
-                    ) : (
-                      <span className="text-slate-400 font-medium text-xs bg-slate-100 px-2 py-0.5 rounded-full">
-                        Semana libre
-                      </span>
-                    )}
-                  </span>
-                  <button
-                    onClick={() => generarPDF(project, p, p.attendances || [])}
-                    className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 transition"
-                    title="Descargar PDF"
-                  >
-                    <svg
-                      className="w-4 h-4"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                      />
-                    </svg>
-                  </button>
-                </div>
-              </div>
+                payroll={p}
+                project={project}
+                isFinished={isFinished}
+                onReabrir={() => reabrirSemana(p.id)}
+              />
             ));
           })()}
         </div>
@@ -1267,6 +1251,168 @@ export default function ObraDetailPage() {
     </div>
   );
 }
+
+// ─── HISTORIAL CARD ──────────────────────────────────────────────────────────
+
+function HistorialCard({
+  payroll,
+  project,
+  isFinished,
+  onReabrir,
+}: {
+  payroll: Payroll & { payments?: Payment[] };
+  project: ProjectDetail;
+  isFinished: boolean;
+  onReabrir: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const payments = payroll.payments ?? [];
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      {/* Fila principal */}
+      <div className="p-3.5 flex items-center justify-between">
+        <div>
+          <p className="font-semibold text-slate-700 text-sm">
+            Semana {formatDate(payroll.weekStart)}
+          </p>
+          <p className="text-xs text-slate-400">
+            Hasta el {formatDate(payroll.weekEnd)}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-slate-800 text-sm">
+            {payroll.totalPaid > 0 ? (
+              formatCurrency(payroll.totalPaid)
+            ) : (
+              <span className="text-slate-400 font-medium text-xs bg-slate-100 px-2 py-0.5 rounded-full">
+                Semana libre
+              </span>
+            )}
+          </span>
+
+          {/* Ver detalle por empleado */}
+          {payments.length > 0 && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 border border-blue-100 text-blue-500 transition"
+              title={expanded ? "Ocultar detalle" : "Ver cobro por empleado"}
+            >
+              <svg
+                className="w-4 h-4 transition-transform"
+                style={{
+                  transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+                }}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </button>
+          )}
+
+          {/* Descargar PDF */}
+          <button
+            onClick={() =>
+              generarPDF(project, payroll, payroll.attendances || [])
+            }
+            className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-500 hover:text-slate-700 transition"
+            title="Descargar PDF"
+          >
+            <svg
+              className="w-4 h-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          </button>
+
+          {/* Reabrir semana */}
+          {!isFinished && (
+            <button
+              onClick={() => {
+                if (
+                  confirm(
+                    "¿Reabrir esta semana?\n\nSe borrará el cobro registrado y se restaurará el presupuesto. Podrás editar las asistencias y volver a cobrar.",
+                  )
+                )
+                  onReabrir();
+              }}
+              className="p-1.5 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-600 transition"
+              title="Reabrir semana para editar"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                />
+              </svg>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Detalle expandido — cobro por empleado */}
+      {expanded && payments.length > 0 && (
+        <div className="border-t border-slate-100 bg-slate-50/50 px-3.5 pb-3.5 pt-2.5">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-2">
+            Cobro por empleado
+          </p>
+          <div className="space-y-2">
+            {payments.map((pay) => (
+              <div
+                key={pay.id}
+                className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-slate-100"
+              >
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold text-xs shrink-0">
+                    {pay.employee?.name?.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">
+                      {pay.employee?.name}
+                    </p>
+                    <p className="text-xs text-slate-400">
+                      {pay.employee?.paymentType === "sqm"
+                        ? `${pay.metersTotal.toFixed(1)} m²`
+                        : `${pay.daysWorked} día${pay.daysWorked !== 1 ? "s" : ""}`}
+                    </p>
+                  </div>
+                </div>
+                <span className="font-bold text-slate-800 text-sm">
+                  {formatCurrency(pay.amount)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── EMP FORM ────────────────────────────────────────────────────────────────
 
 const EmpForm = ({
   form,
