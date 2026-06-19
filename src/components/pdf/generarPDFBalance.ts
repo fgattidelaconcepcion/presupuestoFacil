@@ -1,4 +1,5 @@
 import type { Project, Payroll, Expense, Employee } from "@/types";
+import { LOGO_PDF } from "./logoBase64";
 
 interface EmployeeSummary {
   employee: Employee;
@@ -80,16 +81,10 @@ export async function generarPDFBalance(
   doc.setFillColor(...orange);
   doc.rect(0, 43, pageW, 3, "F");
 
+  // Logo de la app: caja blanca redondeada + ícono EasyPlaster
   doc.setFillColor(...white);
   doc.roundedRect(12, 7, 28, 28, 4, 4, "F");
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...blue);
-  doc.text("EASY", 17, 19);
-  doc.text("PLASTER", 14.5, 25);
-  doc.setFontSize(5.5);
-  doc.setFont("helvetica", "normal");
-  doc.text("Steel Framing", 15, 30);
+  doc.addImage(LOGO_PDF, "JPEG", 14.5, 9.5, 23, 23);
 
   doc.setTextColor(...white);
   doc.setFont("helvetica", "bold");

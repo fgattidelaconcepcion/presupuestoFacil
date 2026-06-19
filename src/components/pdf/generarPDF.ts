@@ -1,4 +1,5 @@
 ﻿import type { Project, Payroll, Attendance } from "@/types";
+import { LOGO_PDF } from "./logoBase64";
 
 const DAYS: { key: string; label: string }[] = [
   { key: "lun", label: "Lunes" },
@@ -46,16 +47,10 @@ export async function generarPDF(
   doc.setFillColor(...orange);
   doc.rect(0, 43, pageW, 3, "F");
 
+  // Logo de la app: caja blanca redondeada + ícono EasyPlaster
   doc.setFillColor(...white);
   doc.roundedRect(12, 7, 28, 28, 4, 4, "F");
-  doc.setFontSize(7);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...blue);
-  doc.text("EASY", 17, 19);
-  doc.text("PLASTER", 14.5, 25);
-  doc.setFontSize(5.5);
-  doc.setFont("helvetica", "normal");
-  doc.text("Steel Framing", 15, 30);
+  doc.addImage(LOGO_PDF, "JPEG", 14.5, 9.5, 23, 23);
 
   doc.setTextColor(...white);
   doc.setFont("helvetica", "bold");
@@ -110,7 +105,7 @@ export async function generarPDF(
   doc.setFont("helvetica", "normal");
   doc.setFontSize(10);
   doc.setTextColor(...dark);
-  doc.text(`${weekStart}  →  ${weekEnd}`, 20, y + 15);
+  doc.text(`${weekStart}  –  ${weekEnd}`, 20, y + 15);
   doc.setDrawColor(...gray200);
   doc.line(pageW / 2, y + 3, pageW / 2, y + 19);
   doc.setFontSize(7.5);
@@ -162,10 +157,10 @@ export async function generarPDF(
       if (!att || !att.present) return "–";
 
       if (p.employee?.paymentType === "sqm" && att.metersWorked) {
-        return `✓\n${att.metersWorked}m²`;
+        return `•\n${att.metersWorked}m²`;
       }
 
-      return "✓";
+      return "•";
     });
     const tipo = p.employee?.paymentType === "sqm" ? "Por m²" : "Por día";
     const diasOMetros =
@@ -226,7 +221,7 @@ export async function generarPDF(
         data.column.index <= 7
       ) {
         const val = data.cell.text[0];
-        if (val === "✓" || val.startsWith("✓")) {
+        if (val === "•" || val.startsWith("•")) {
           data.cell.styles.textColor = [22, 163, 74];
           data.cell.styles.fontStyle = "bold";
         } else {
