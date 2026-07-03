@@ -33,6 +33,7 @@ export async function GET(
         orderBy: { weekStart: "desc" },
         include: {
           payments: { include: { employee: true } },
+          attendances: true,
         },
       },
       expenses: { orderBy: { date: "desc" } },

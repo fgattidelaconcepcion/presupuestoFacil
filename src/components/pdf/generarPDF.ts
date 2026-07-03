@@ -232,16 +232,32 @@ export async function generarPDF(
   });
 
   // Signatures
-  const sigY = (doc as any).lastAutoTable.finalY + 14;
-  if (sigY < pageH - 40) {
+  const signers = payroll.payments ?? [];
+  const perRow = 4;
+  const rowH = 26;
+  let sigY = (doc as any).lastAutoTable.finalY + 14;
+
+  if (signers.length > 0) {
+    const rows = Math.ceil(signers.length / perRow);
+    const blockH = 10 + rows * rowH;
+
+    // Si no entra en la página actual, empezar una nueva
+    if (sigY + blockH > pageH - 16) {
+      doc.addPage();
+      sigY = 20;
+    }
+
     doc.setFontSize(8);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(100, 116, 139);
     doc.text("FIRMAS DE CONFORMIDAD", 14, sigY);
-    const sigW = (pageW - 42) / Math.min(payroll.payments?.length ?? 1, 4);
-    (payroll.payments ?? []).slice(0, 4).forEach((p, i) => {
-      const sx = 14 + i * (sigW + 4);
-      const sy = sigY + 8;
+
+    const sigW = (pageW - 28 - (perRow - 1) * 4) / perRow;
+    signers.forEach((p, i) => {
+      const col = i % perRow;
+      const row = Math.floor(i / perRow);
+      const sx = 14 + col * (sigW + 4);
+      const sy = sigY + 8 + row * rowH;
       doc.setDrawColor(...gray200);
       doc.line(sx, sy + 14, sx + sigW - 2, sy + 14);
       doc.setFontSize(7.5);
