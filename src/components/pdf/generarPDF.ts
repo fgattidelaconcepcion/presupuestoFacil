@@ -154,13 +154,16 @@ export async function generarPDF(
       const att = attendanceList.find(
         (a) => a.employeeId === p.employeeId && a.day === d.key,
       );
-      if (!att || !att.present) return "–";
 
-      if (p.employee?.paymentType === "sqm" && att.metersWorked) {
-        return `•\n${att.metersWorked}m²`;
+      if (!att || !att.present) return "";
+
+      // Empleados que cobran por m²
+      if (p.employee?.paymentType === "sqm") {
+        return `${att.metersWorked ?? 0} m²`;
       }
 
-      return "•";
+      // Cobra por día
+      return fmt(p.employee?.dailyRate ?? 0);
     });
     const tipo = p.employee?.paymentType === "sqm" ? "Por m²" : "Por día";
     const diasOMetros =
@@ -220,12 +223,12 @@ export async function generarPDF(
         data.column.index >= 2 &&
         data.column.index <= 7
       ) {
-        const val = data.cell.text[0];
-        if (val === "•" || val.startsWith("•")) {
-          data.cell.styles.textColor = [22, 163, 74];
-          data.cell.styles.fontStyle = "bold";
-        } else {
+        data.cell.styles.fontStyle = "bold";
+
+        if (data.cell.text[0] === "") {
           data.cell.styles.textColor = [203, 213, 225];
+        } else {
+          data.cell.styles.textColor = [22, 163, 74];
         }
       }
     },
