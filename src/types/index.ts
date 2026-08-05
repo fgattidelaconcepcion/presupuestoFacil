@@ -65,3 +65,30 @@ export interface Expense {
   date: string;
   createdAt: string;
 }
+
+export type MaterialOrderStatus = "pending" | "partial" | "complete";
+
+export interface MaterialItem {
+  id: string;
+  orderId: string;
+  name: string;
+  unit: string;
+  quantityOrdered: number;
+  quantityReceived: number;
+  received: boolean;
+  receivedAt?: string | null;
+  notes?: string | null;
+  createdAt: string;
+}
+
+export interface MaterialOrder {
+  id: string;
+  projectId: string;
+  name: string;
+  supplier?: string | null;
+  notes?: string | null;
+  orderDate: string;
+  status: MaterialOrderStatus;
+  items: MaterialItem[];
+  createdAt: string;
+}

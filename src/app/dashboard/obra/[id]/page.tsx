@@ -10,17 +10,34 @@ import type {
   Attendance,
   Expense,
   Payment,
+  MaterialOrder,
+  MaterialItem,
 } from "@/types";
 import { generarPDF } from "@/components/pdf/generarPDF";
 import { generarPDFGastos } from "@/components/pdf/generarPDFGastos";
 import { generarPDFBalance } from "@/components/pdf/generarPDFBalance";
+import { generarPDFMateriales } from "@/components/pdf/generarPDFMateriales";
 
-type Tab = "asistencia" | "empleados" | "gastos" | "historial";
+type Tab =
+  | "asistencia"
+  | "empleados"
+  | "materiales"
+  | "gastos"
+  | "historial";
 
 interface ProjectDetail extends Project {
   employees: Employee[];
   payrolls: (Payroll & { payments?: Payment[] })[];
   expenses: Expense[];
+  materialOrders: MaterialOrder[];
+}
+
+const UNIDADES = ["un", "m", "m²", "m³", "kg", "bolsa", "chapa", "caja", "rollo", "lt"];
+
+function itemEstado(i: MaterialItem): "completo" | "parcial" | "pendiente" {
+  if (i.received || i.quantityReceived >= i.quantityOrdered) return "completo";
+  if (i.quantityReceived > 0) return "parcial";
+  return "pendiente";
 }
 
 interface EmpFormProps {
@@ -84,6 +101,45 @@ export default function ObraDetailPage() {
   });
   const [gastoLoading, setGastoLoading] = useState(false);
   const [gastoError, setGastoError] = useState("");
+
+  // ── Materiales state ──────────────────────────────────
+  const [showPedidoForm, setShowPedidoForm] = useState(false);
+  const [pedidoForm, setPedidoForm] = useState({
+    name: "",
+    supplier: "",
+    orderDate: new Date().toISOString().split("T")[0],
+  });
+  const [pedidoLoading, setPedidoLoading] = useState(false);
+  const [pedidoError, setPedidoError] = useState("");
+  const [openOrders, setOpenOrders] = useState<Record<string, boolean>>({});
+  const [addItemFor, setAddItemFor] = useState<string | null>(null);
+  const [itemForm, setItemForm] = useState({
+    name: "",
+    quantityOrdered: "",
+    unit: "un",
+    notes: "",
+  });
+  const [itemLoading, setItemLoading] = useState(false);
+  const [itemError, setItemError] = useState("");
+  const [editingItem, setEditingItem] = useState<MaterialItem | null>(null);
+  const [editItemForm, setEditItemForm] = useState({
+    name: "",
+    quantityOrdered: "",
+    quantityReceived: "",
+    unit: "un",
+    notes: "",
+  });
+  const [editingPedido, setEditingPedido] = useState<MaterialOrder | null>(
+    null,
+  );
+  const [editPedidoForm, setEditPedidoForm] = useState({
+    name: "",
+    supplier: "",
+    orderDate: "",
+  });
+  const [pdfFiltro, setPdfFiltro] = useState<
+    "todos" | "recibidos" | "pendientes"
+  >("todos");
 
   const fetchProject = useCallback(async () => {
     const res = await fetch(`/api/obras/${id}`);
@@ -323,6 +379,155 @@ export default function ObraDetailPage() {
     fetchProject();
   }
 
+  // ── Materiales ────────────────────────────────────────
+  async function addPedido() {
+    if (!project || !pedidoForm.name) return;
+    setPedidoLoading(true);
+    setPedidoError("");
+    const res = await fetch("/api/pedidos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        name: pedidoForm.name,
+        supplier: pedidoForm.supplier || null,
+        orderDate: pedidoForm.orderDate,
+      }),
+    });
+    const data = await res.json();
+    setPedidoLoading(false);
+    if (!res.ok) {
+      setPedidoError(data.error ?? "Error al crear el pedido");
+      return;
+    }
+    setPedidoForm({
+      name: "",
+      supplier: "",
+      orderDate: new Date().toISOString().split("T")[0],
+    });
+    setShowPedidoForm(false);
+    setOpenOrders((p) => ({ ...p, [data.id]: true }));
+    setAddItemFor(data.id);
+    await fetchProject();
+  }
+
+  async function savePedido() {
+    if (!editingPedido) return;
+    setPedidoLoading(true);
+    await fetch(`/api/pedidos/${editingPedido.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: editPedidoForm.name,
+        supplier: editPedidoForm.supplier || null,
+        orderDate: editPedidoForm.orderDate,
+      }),
+    });
+    setPedidoLoading(false);
+    setEditingPedido(null);
+    fetchProject();
+  }
+
+  async function deletePedido(orderId: string) {
+    if (!confirm("¿Eliminar este pedido y todos sus materiales?")) return;
+    await fetch(`/api/pedidos/${orderId}`, { method: "DELETE" });
+    fetchProject();
+  }
+
+  async function addItem(orderId: string) {
+    if (!itemForm.name || !itemForm.quantityOrdered) return;
+    setItemLoading(true);
+    setItemError("");
+    const res = await fetch(`/api/pedidos/${orderId}/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: itemForm.name,
+        unit: itemForm.unit || "un",
+        quantityOrdered: parseFloat(itemForm.quantityOrdered),
+        notes: itemForm.notes || null,
+      }),
+    });
+    const data = await res.json();
+    setItemLoading(false);
+    if (!res.ok) {
+      setItemError(data.error ?? "Error al agregar el material");
+      return;
+    }
+    setItemForm({ name: "", quantityOrdered: "", unit: itemForm.unit, notes: "" });
+    await fetchProject();
+  }
+
+  /** Optimistic update de un item dentro del state del proyecto. */
+  function patchItemLocal(itemId: string, patch: Partial<MaterialItem>) {
+    setProject((prev) =>
+      prev
+        ? {
+            ...prev,
+            materialOrders: (prev.materialOrders ?? []).map((o) => ({
+              ...o,
+              items: o.items.map((i) =>
+                i.id === itemId ? { ...i, ...patch } : i,
+              ),
+            })),
+          }
+        : prev,
+    );
+  }
+
+  async function toggleItemRecibido(item: MaterialItem) {
+    const nuevo = !(itemEstado(item) === "completo");
+    patchItemLocal(item.id, {
+      received: nuevo,
+      quantityReceived: nuevo ? item.quantityOrdered : 0,
+    });
+    await fetch(`/api/materiales/${item.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ received: nuevo }),
+    });
+    fetchProject();
+  }
+
+  async function setCantidadRecibida(item: MaterialItem, cantidad: number) {
+    const q = Math.max(0, isNaN(cantidad) ? 0 : cantidad);
+    patchItemLocal(item.id, {
+      quantityReceived: q,
+      received: q >= item.quantityOrdered && q > 0,
+    });
+    await fetch(`/api/materiales/${item.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quantityReceived: q }),
+    });
+    fetchProject();
+  }
+
+  async function saveEditItem() {
+    if (!editingItem) return;
+    setItemLoading(true);
+    await fetch(`/api/materiales/${editingItem.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: editItemForm.name,
+        unit: editItemForm.unit || "un",
+        quantityOrdered: parseFloat(editItemForm.quantityOrdered),
+        quantityReceived: parseFloat(editItemForm.quantityReceived || "0"),
+        notes: editItemForm.notes || null,
+      }),
+    });
+    setItemLoading(false);
+    setEditingItem(null);
+    fetchProject();
+  }
+
+  async function deleteItem(itemId: string) {
+    if (!confirm("¿Eliminar este material del pedido?")) return;
+    await fetch(`/api/materiales/${itemId}`, { method: "DELETE" });
+    fetchProject();
+  }
+
   function calcEmpWeekTotal(emp: Employee): number {
     if (!attendances[emp.id]) return 0;
     if (emp.paymentType === "sqm" && emp.sqmRate) {
@@ -363,6 +568,15 @@ export default function ObraDetailPage() {
     (s, e) => s + e.amount,
     0,
   );
+
+  const orders = project.materialOrders ?? [];
+  const allMatItems = orders.flatMap((o) => o.items);
+  const matPendientes = allMatItems.filter(
+    (i) => itemEstado(i) !== "completo",
+  ).length;
+  const matCompletos = allMatItems.filter(
+    (i) => itemEstado(i) === "completo",
+  ).length;
 
   return (
     <div>
@@ -430,6 +644,166 @@ export default function ObraDetailPage() {
       </div>
 
       {/* ─── MODALS ─────────────────────────────────────────── */}
+      {editingPedido && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+            <h3 className="font-bold text-slate-800 mb-4">Editar pedido</h3>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={editPedidoForm.name}
+                onChange={(e) =>
+                  setEditPedidoForm((p) => ({ ...p, name: e.target.value }))
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                placeholder="Nombre del pedido"
+              />
+              <input
+                type="text"
+                value={editPedidoForm.supplier}
+                onChange={(e) =>
+                  setEditPedidoForm((p) => ({ ...p, supplier: e.target.value }))
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                placeholder="Proveedor (opcional)"
+              />
+              <input
+                type="date"
+                value={editPedidoForm.orderDate}
+                onChange={(e) =>
+                  setEditPedidoForm((p) => ({
+                    ...p,
+                    orderDate: e.target.value,
+                  }))
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+              />
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setEditingPedido(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-500 text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={savePedido}
+                  disabled={pedidoLoading || !editPedidoForm.name}
+                  className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold disabled:opacity-50"
+                >
+                  {pedidoLoading ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingItem && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+            <h3 className="font-bold text-slate-800 mb-1">Editar material</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              Ajustá lo pedido y lo que realmente llegó
+            </p>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={editItemForm.name}
+                onChange={(e) =>
+                  setEditItemForm((p) => ({ ...p, name: e.target.value }))
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                placeholder="Material"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-500 font-medium mb-1 block">
+                    Cantidad pedida
+                  </label>
+                  <input
+                    type="number"
+                    value={editItemForm.quantityOrdered}
+                    onChange={(e) =>
+                      setEditItemForm((p) => ({
+                        ...p,
+                        quantityOrdered: e.target.value,
+                      }))
+                    }
+                    min="0"
+                    step="any"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 font-medium mb-1 block">
+                    Cantidad recibida
+                  </label>
+                  <input
+                    type="number"
+                    value={editItemForm.quantityReceived}
+                    onChange={(e) =>
+                      setEditItemForm((p) => ({
+                        ...p,
+                        quantityReceived: e.target.value,
+                      }))
+                    }
+                    min="0"
+                    step="any"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-green-200 bg-green-50/50 focus:outline-none focus:ring-2 focus:ring-green-400 text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 font-medium mb-1 block">
+                  Unidad
+                </label>
+                <select
+                  value={editItemForm.unit}
+                  onChange={(e) =>
+                    setEditItemForm((p) => ({ ...p, unit: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                >
+                  {UNIDADES.map((u) => (
+                    <option key={u} value={u}>
+                      {u}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <input
+                type="text"
+                value={editItemForm.notes}
+                onChange={(e) =>
+                  setEditItemForm((p) => ({ ...p, notes: e.target.value }))
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                placeholder="Nota (opcional)"
+              />
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setEditingItem(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-500 text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveEditItem}
+                  disabled={
+                    itemLoading ||
+                    !editItemForm.name ||
+                    !editItemForm.quantityOrdered
+                  }
+                  className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold disabled:opacity-50"
+                >
+                  {itemLoading ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {editingObra && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
           <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
@@ -639,6 +1013,7 @@ export default function ObraDetailPage() {
           [
             ["asistencia", "Asistencia"],
             ["empleados", "Empleados"],
+            ["materiales", "Materiales"],
             ["gastos", "Gastos"],
             ["historial", "Historial"],
           ] as [Tab, string][]
@@ -652,6 +1027,11 @@ export default function ObraDetailPage() {
             {t === "gastos" && (project.expenses ?? []).length > 0 && (
               <span className="ml-1 bg-red-100 text-red-600 text-xs px-1.5 py-0.5 rounded-full font-bold">
                 {(project.expenses ?? []).length}
+              </span>
+            )}
+            {t === "materiales" && matPendientes > 0 && (
+              <span className="ml-1 bg-amber-100 text-amber-700 text-xs px-1.5 py-0.5 rounded-full font-bold">
+                {matPendientes}
               </span>
             )}
           </button>
@@ -993,6 +1373,604 @@ export default function ObraDetailPage() {
             >
               🏁 Finalizar obra
             </button>
+          )}
+        </div>
+      )}
+
+      {/* ─── TAB: MATERIALES ────────────────────────────────── */}
+      {tab === "materiales" && (
+        <div>
+          {/* Encabezado + acciones */}
+          <div className="flex items-start justify-between mb-3 gap-2">
+            <div>
+              <p className="text-sm font-semibold text-slate-600">
+                {orders.length} pedido{orders.length !== 1 ? "s" : ""}
+              </p>
+              {allMatItems.length > 0 && (
+                <p className="text-xs text-slate-400">
+                  <span className="text-green-600 font-medium">
+                    {matCompletos} recibido{matCompletos !== 1 ? "s" : ""}
+                  </span>
+                  {" · "}
+                  <span className="text-amber-600 font-medium">
+                    {matPendientes} pendiente{matPendientes !== 1 ? "s" : ""}
+                  </span>
+                </p>
+              )}
+            </div>
+            {!isFinished && (
+              <button
+                onClick={() => {
+                  setShowPedidoForm(true);
+                  setPedidoError("");
+                }}
+                className="flex items-center gap-1 text-sm text-primary-700 font-semibold shrink-0"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.5}
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                Nuevo pedido
+              </button>
+            )}
+          </div>
+
+          {/* Barra de PDF */}
+          {allMatItems.length > 0 && (
+            <div className="bg-white rounded-xl p-2.5 shadow-sm border border-slate-100 mb-3 flex items-center gap-2">
+              <select
+                value={pdfFiltro}
+                onChange={(e) => setPdfFiltro(e.target.value as any)}
+                className="flex-1 min-w-0 px-2.5 py-2 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-primary-400"
+              >
+                <option value="todos">Pedido vs recibido (completo)</option>
+                <option value="recibidos">Solo materiales recibidos</option>
+                <option value="pendientes">Solo lo que falta</option>
+              </select>
+              <button
+                onClick={() =>
+                  generarPDFMateriales(project, orders, pdfFiltro)
+                }
+                className="flex items-center gap-1 text-xs text-white bg-primary-600 hover:bg-primary-700 font-semibold px-3 py-2 rounded-lg transition shrink-0"
+              >
+                <svg
+                  className="w-3.5 h-3.5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+                PDF
+              </button>
+            </div>
+          )}
+
+          {/* Form nuevo pedido */}
+          {showPedidoForm && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-primary-100 mb-3">
+              <h4 className="font-semibold text-slate-700 mb-3 text-sm">
+                Nuevo pedido de materiales
+              </h4>
+              <div className="space-y-3">
+                <input
+                  type="text"
+                  value={pedidoForm.name}
+                  onChange={(e) =>
+                    setPedidoForm((p) => ({ ...p, name: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm"
+                  placeholder="Nombre del pedido (ej: Pedido 1 - Placas y perfiles)"
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="text"
+                    value={pedidoForm.supplier}
+                    onChange={(e) =>
+                      setPedidoForm((p) => ({ ...p, supplier: e.target.value }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm"
+                    placeholder="Proveedor (opcional)"
+                  />
+                  <input
+                    type="date"
+                    value={pedidoForm.orderDate}
+                    onChange={(e) =>
+                      setPedidoForm((p) => ({
+                        ...p,
+                        orderDate: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm"
+                  />
+                </div>
+                {pedidoError && (
+                  <p className="text-red-500 text-xs">{pedidoError}</p>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowPedidoForm(false);
+                      setPedidoError("");
+                    }}
+                    className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={addPedido}
+                    disabled={pedidoLoading || !pedidoForm.name}
+                    className="flex-1 py-2 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold disabled:opacity-50"
+                  >
+                    {pedidoLoading ? "Creando..." : "Crear pedido"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de pedidos */}
+          {orders.length === 0 ? (
+            <div className="text-center py-10">
+              <div className="text-4xl mb-3">📦</div>
+              <p className="text-slate-500 text-sm">
+                No hay pedidos de materiales
+              </p>
+              {!isFinished && (
+                <p className="text-xs text-slate-400 mt-1">
+                  Creá un pedido y cargá los items que encargaste
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {orders.map((order) => {
+                const abierto = openOrders[order.id] ?? true;
+                const completos = order.items.filter(
+                  (i) => itemEstado(i) === "completo",
+                ).length;
+                const total = order.items.length;
+                const pct = total > 0 ? (completos / total) * 100 : 0;
+                const estadoColor =
+                  total === 0
+                    ? "bg-slate-100 text-slate-500"
+                    : completos === total
+                      ? "bg-green-100 text-green-700"
+                      : completos > 0 ||
+                          order.items.some((i) => i.quantityReceived > 0)
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-slate-100 text-slate-500";
+                const estadoLabel =
+                  total === 0
+                    ? "Sin items"
+                    : completos === total
+                      ? "Completo"
+                      : completos > 0 ||
+                          order.items.some((i) => i.quantityReceived > 0)
+                        ? "Parcial"
+                        : "Pendiente";
+
+                return (
+                  <div
+                    key={order.id}
+                    className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden"
+                  >
+                    {/* Cabecera del pedido */}
+                    <div className="p-3.5">
+                      <div className="flex items-start justify-between gap-2">
+                        <button
+                          onClick={() =>
+                            setOpenOrders((p) => ({
+                              ...p,
+                              [order.id]: !abierto,
+                            }))
+                          }
+                          className="flex items-start gap-2.5 min-w-0 flex-1 text-left"
+                        >
+                          <svg
+                            className={`w-4 h-4 mt-0.5 text-slate-400 shrink-0 transition-transform ${abierto ? "rotate-90" : ""}`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-800 text-sm truncate">
+                              {order.name}
+                            </p>
+                            <p className="text-xs text-slate-400 truncate">
+                              {formatDate(order.orderDate)}
+                              {order.supplier ? ` · ${order.supplier}` : ""}
+                            </p>
+                          </div>
+                        </button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full font-semibold ${estadoColor}`}
+                          >
+                            {estadoLabel}
+                          </span>
+                          {!isFinished && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditingPedido(order);
+                                  setEditPedidoForm({
+                                    name: order.name,
+                                    supplier: order.supplier ?? "",
+                                    orderDate: new Date(order.orderDate)
+                                      .toISOString()
+                                      .split("T")[0],
+                                  });
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-primary-600 transition"
+                              >
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                                  />
+                                </svg>
+                              </button>
+                              <button
+                                onClick={() => deletePedido(order.id)}
+                                className="p-1.5 text-slate-400 hover:text-red-500 transition"
+                              >
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                  />
+                                </svg>
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Barra de progreso */}
+                      {total > 0 && (
+                        <div className="mt-2.5 flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${completos === total ? "bg-green-500" : "bg-amber-400"}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-slate-400 font-medium shrink-0">
+                            {completos}/{total}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Items */}
+                    {abierto && (
+                      <div className="border-t border-slate-100 divide-y divide-slate-50">
+                        {order.items.length === 0 && (
+                          <p className="text-xs text-slate-400 text-center py-4">
+                            Sin materiales cargados
+                          </p>
+                        )}
+                        {order.items.map((item) => {
+                          const estado = itemEstado(item);
+                          const falta = Math.max(
+                            0,
+                            item.quantityOrdered - item.quantityReceived,
+                          );
+                          return (
+                            <div
+                              key={item.id}
+                              className={`px-3.5 py-3 ${estado === "completo" ? "bg-green-50/40" : estado === "parcial" ? "bg-amber-50/40" : ""}`}
+                            >
+                              <div className="flex items-start gap-2.5">
+                                {/* Checkbox */}
+                                <button
+                                  onClick={() =>
+                                    !isFinished && toggleItemRecibido(item)
+                                  }
+                                  disabled={isFinished}
+                                  className={`w-5 h-5 mt-0.5 rounded-md border-2 flex items-center justify-center shrink-0 transition ${
+                                    estado === "completo"
+                                      ? "bg-green-500 border-green-500"
+                                      : estado === "parcial"
+                                        ? "bg-amber-400 border-amber-400"
+                                        : "border-slate-300 hover:border-primary-400"
+                                  } ${isFinished ? "opacity-60" : ""}`}
+                                >
+                                  {estado === "completo" && (
+                                    <svg
+                                      className="w-3 h-3 text-white"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      viewBox="0 0 24 24"
+                                    >
+                                      <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={3.5}
+                                        d="M5 13l4 4L19 7"
+                                      />
+                                    </svg>
+                                  )}
+                                  {estado === "parcial" && (
+                                    <div className="w-2 h-0.5 bg-white rounded-full" />
+                                  )}
+                                </button>
+
+                                <div className="min-w-0 flex-1">
+                                  <p
+                                    className={`text-sm font-medium truncate ${estado === "completo" ? "text-slate-500 line-through" : "text-slate-800"}`}
+                                  >
+                                    {item.name}
+                                  </p>
+                                  <p className="text-xs text-slate-400">
+                                    Pedido: {item.quantityOrdered} {item.unit}
+                                    {item.quantityReceived > 0 && (
+                                      <>
+                                        {" · "}
+                                        <span className="text-green-600 font-medium">
+                                          Llegó: {item.quantityReceived}{" "}
+                                          {item.unit}
+                                        </span>
+                                      </>
+                                    )}
+                                    {falta > 0 && item.quantityReceived > 0 && (
+                                      <>
+                                        {" · "}
+                                        <span className="text-red-500 font-semibold">
+                                          Falta: {falta} {item.unit}
+                                        </span>
+                                      </>
+                                    )}
+                                  </p>
+                                  {item.notes && (
+                                    <p className="text-xs text-slate-400 italic mt-0.5">
+                                      {item.notes}
+                                    </p>
+                                  )}
+                                </div>
+
+                                {!isFinished && (
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button
+                                      onClick={() => {
+                                        setEditingItem(item);
+                                        setEditItemForm({
+                                          name: item.name,
+                                          quantityOrdered: String(
+                                            item.quantityOrdered,
+                                          ),
+                                          quantityReceived: String(
+                                            item.quantityReceived,
+                                          ),
+                                          unit: item.unit,
+                                          notes: item.notes ?? "",
+                                        });
+                                      }}
+                                      className="p-1.5 text-slate-400 hover:text-primary-600 transition"
+                                    >
+                                      <svg
+                                        className="w-3.5 h-3.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                                        />
+                                      </svg>
+                                    </button>
+                                    <button
+                                      onClick={() => deleteItem(item.id)}
+                                      className="p-1.5 text-slate-400 hover:text-red-500 transition"
+                                    >
+                                      <svg
+                                        className="w-3.5 h-3.5"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                      >
+                                        <path
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                          strokeWidth={2}
+                                          d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                        />
+                                      </svg>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Cantidad recibida rápida */}
+                              {!isFinished && estado !== "completo" && (
+                                <div className="flex items-center gap-2 mt-2 ml-7.5 pl-0.5">
+                                  <span className="text-xs text-slate-400">
+                                    Llegó:
+                                  </span>
+                                  <input
+                                    type="number"
+                                    defaultValue={item.quantityReceived || ""}
+                                    min="0"
+                                    step="any"
+                                    onBlur={(e) => {
+                                      const v = parseFloat(e.target.value);
+                                      const nuevo = isNaN(v) ? 0 : v;
+                                      if (nuevo !== item.quantityReceived)
+                                        setCantidadRecibida(item, nuevo);
+                                    }}
+                                    onKeyDown={(e) => {
+                                      if (e.key === "Enter")
+                                        (e.target as HTMLInputElement).blur();
+                                    }}
+                                    className="w-24 px-2 py-1 rounded-lg border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                    placeholder="0"
+                                  />
+                                  <span className="text-xs text-slate-400">
+                                    de {item.quantityOrdered} {item.unit}
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+
+                        {/* Agregar item */}
+                        {!isFinished && (
+                          <div className="p-3.5 bg-slate-50/60">
+                            {addItemFor === order.id ? (
+                              <div className="space-y-2">
+                                <input
+                                  type="text"
+                                  value={itemForm.name}
+                                  onChange={(e) =>
+                                    setItemForm((p) => ({
+                                      ...p,
+                                      name: e.target.value,
+                                    }))
+                                  }
+                                  className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm"
+                                  placeholder="Material (ej: Tornillos T1 punta aguja)"
+                                  autoFocus
+                                />
+                                <div className="grid grid-cols-2 gap-2">
+                                  <input
+                                    type="number"
+                                    value={itemForm.quantityOrdered}
+                                    onChange={(e) =>
+                                      setItemForm((p) => ({
+                                        ...p,
+                                        quantityOrdered: e.target.value,
+                                      }))
+                                    }
+                                    min="0"
+                                    step="any"
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm"
+                                    placeholder="Cantidad"
+                                  />
+                                  <select
+                                    value={itemForm.unit}
+                                    onChange={(e) =>
+                                      setItemForm((p) => ({
+                                        ...p,
+                                        unit: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm"
+                                  >
+                                    {UNIDADES.map((u) => (
+                                      <option key={u} value={u}>
+                                        {u}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                                {itemError && (
+                                  <p className="text-red-500 text-xs">
+                                    {itemError}
+                                  </p>
+                                )}
+                                <div className="flex gap-2">
+                                  <button
+                                    onClick={() => {
+                                      setAddItemFor(null);
+                                      setItemError("");
+                                      setItemForm({
+                                        name: "",
+                                        quantityOrdered: "",
+                                        unit: "un",
+                                        notes: "",
+                                      });
+                                    }}
+                                    className="flex-1 py-2 rounded-lg border border-slate-200 text-slate-500 text-xs"
+                                  >
+                                    Listo
+                                  </button>
+                                  <button
+                                    onClick={() => addItem(order.id)}
+                                    disabled={
+                                      itemLoading ||
+                                      !itemForm.name ||
+                                      !itemForm.quantityOrdered
+                                    }
+                                    className="flex-1 py-2 rounded-lg bg-primary-600 hover:bg-primary-700 text-white text-xs font-semibold disabled:opacity-50"
+                                  >
+                                    {itemLoading
+                                      ? "Agregando..."
+                                      : "Agregar material"}
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setAddItemFor(order.id);
+                                  setItemError("");
+                                }}
+                                className="flex items-center gap-1.5 text-xs text-primary-700 font-semibold"
+                              >
+                                <svg
+                                  className="w-3.5 h-3.5"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2.5}
+                                    d="M12 4v16m8-8H4"
+                                  />
+                                </svg>
+                                Agregar material
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           )}
         </div>
       )}

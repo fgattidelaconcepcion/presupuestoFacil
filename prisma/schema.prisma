@@ -29,6 +29,7 @@ model Project {
   employees        Employee[]
   payrolls         Payroll[]
   expenses         Expense[]
+  materialOrders   MaterialOrder[]
   active           Boolean   @default(true)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -94,4 +95,33 @@ model Expense {
   amount      Float
   date        DateTime @default(now())
   createdAt   DateTime @default(now())
+}
+
+model MaterialOrder {
+  id         String          @id @default(cuid())
+  projectId  String
+  project    Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name       String
+  supplier   String?
+  notes      String?
+  orderDate  DateTime        @default(now())
+  status     String          @default("pending") // pending | partial | complete
+  items      MaterialItem[]
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+}
+
+model MaterialItem {
+  id               String        @id @default(cuid())
+  orderId          String
+  order            MaterialOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  name             String
+  unit             String        @default("un")
+  quantityOrdered  Float         @default(1)
+  quantityReceived Float         @default(0)
+  received         Boolean       @default(false)
+  receivedAt       DateTime?
+  notes            String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 }

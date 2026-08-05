@@ -37,6 +37,10 @@ export async function GET(
         },
       },
       expenses: { orderBy: { date: "desc" } },
+      materialOrders: {
+        orderBy: { orderDate: "desc" },
+        include: { items: { orderBy: { createdAt: "asc" } } },
+      },
     },
   });
 
