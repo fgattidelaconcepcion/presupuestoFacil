@@ -101,6 +101,12 @@ export default function ObraDetailPage() {
   });
   const [gastoLoading, setGastoLoading] = useState(false);
   const [gastoError, setGastoError] = useState("");
+  const [editingGasto, setEditingGasto] = useState<Expense | null>(null);
+  const [editGastoForm, setEditGastoForm] = useState({
+    description: "",
+    amount: "",
+    date: "",
+  });
 
   // ── Materiales state ──────────────────────────────────
   const [showPedidoForm, setShowPedidoForm] = useState(false);
@@ -370,6 +376,41 @@ export default function ObraDetailPage() {
       date: new Date().toISOString().split("T")[0],
     });
     setShowGastoForm(false);
+    fetchProject();
+  }
+
+  /** Abre el modal de edición de un gasto extra con sus datos actuales. */
+  function abrirEditarGasto(expense: Expense) {
+    setEditingGasto(expense);
+    setGastoError("");
+    setEditGastoForm({
+      description: expense.description,
+      amount: String(expense.amount),
+      date: new Date(expense.date).toISOString().split("T")[0],
+    });
+  }
+
+  async function saveEditGasto() {
+    if (!editingGasto) return;
+    setGastoLoading(true);
+    setGastoError("");
+    const res = await fetch(`/api/gastos/${editingGasto.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        description: editGastoForm.description,
+        amount: parseFloat(editGastoForm.amount),
+        date: editGastoForm.date,
+      }),
+    });
+    const data = await res.json();
+    setGastoLoading(false);
+    if (!res.ok) {
+      // Ej: "Presupuesto insuficiente" si sube el monto más de lo que queda.
+      setGastoError(data.error ?? "Error al guardar el gasto");
+      return;
+    }
+    setEditingGasto(null);
     fetchProject();
   }
 
@@ -691,6 +732,95 @@ export default function ObraDetailPage() {
                   className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold disabled:opacity-50"
                 >
                   {pedidoLoading ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingGasto && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+            <h3 className="font-bold text-slate-800 mb-1">Editar gasto extra</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              El presupuesto restante se ajusta solo con la diferencia
+            </p>
+            <div className="space-y-3">
+              <input
+                type="text"
+                value={editGastoForm.description}
+                onChange={(e) =>
+                  setEditGastoForm((p) => ({
+                    ...p,
+                    description: e.target.value,
+                  }))
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-400 text-sm"
+                placeholder="Descripción del gasto"
+              />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-500 font-medium mb-1 block">
+                    Monto
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      value={editGastoForm.amount}
+                      onChange={(e) =>
+                        setEditGastoForm((p) => ({
+                          ...p,
+                          amount: e.target.value,
+                        }))
+                      }
+                      min="0"
+                      step="0.01"
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-400 text-sm"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 font-medium mb-1 block">
+                    Fecha
+                  </label>
+                  <input
+                    type="date"
+                    value={editGastoForm.date}
+                    onChange={(e) =>
+                      setEditGastoForm((p) => ({ ...p, date: e.target.value }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-400 text-sm"
+                  />
+                </div>
+              </div>
+              {gastoError && (
+                <p className="text-red-500 text-xs">{gastoError}</p>
+              )}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    setEditingGasto(null);
+                    setGastoError("");
+                  }}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-500 text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveEditGasto}
+                  disabled={
+                    gastoLoading ||
+                    !editGastoForm.description ||
+                    !editGastoForm.amount
+                  }
+                  className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-semibold disabled:opacity-50"
+                >
+                  {gastoLoading ? "Guardando..." : "Guardar"}
                 </button>
               </div>
             </div>
@@ -2153,14 +2283,36 @@ export default function ObraDetailPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <span className="font-bold text-red-600 text-sm">
                       {formatCurrency(expense.amount)}
                     </span>
                     {!isFinished && (
                       <button
+                        onClick={() => abrirEditarGasto(expense)}
+                        aria-label={`Editar ${expense.description}`}
+                        className="p-2 text-slate-500 hover:text-primary-600 active:bg-slate-100 rounded-lg transition"
+                      >
+                        <svg
+                          className="w-4 h-4"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                          />
+                        </svg>
+                      </button>
+                    )}
+                    {!isFinished && (
+                      <button
                         onClick={() => deleteGasto(expense.id)}
-                        className="p-1.5 text-slate-400 hover:text-red-500 transition"
+                        aria-label={`Eliminar ${expense.description}`}
+                        className="p-2 text-slate-500 hover:text-red-500 active:bg-slate-100 rounded-lg transition"
                       >
                         <svg
                           className="w-4 h-4"
