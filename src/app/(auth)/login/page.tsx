@@ -23,11 +23,20 @@ export default function LoginPage() {
     });
     setLoading(false);
     if (res?.error) {
-      setError(
-        res.error.includes("Demasiados")
-          ? "Demasiados intentos. Esperá un minuto."
-          : "Email o contraseña incorrectos",
-      );
+      // NextAuth manda "CredentialsSignin" cuando la contraseña no coincide.
+      // Cualquier otro mensaje es una falla del servidor (por ejemplo, si el
+      // rate limit no puede hablar con Upstash) y no hay que mostrarla como
+      // si fuera un error del usuario.
+      if (res.error.includes("Demasiados")) {
+        setError("Demasiados intentos. Esperá un minuto.");
+      } else if (res.error === "CredentialsSignin") {
+        setError("Email o contraseña incorrectos");
+      } else {
+        console.error("[login] error inesperado:", res.error);
+        setError(
+          "No pudimos iniciar sesión por un problema del servidor. Probá de nuevo en un momento.",
+        );
+      }
     } else {
       router.push("/dashboard");
       router.refresh();
