@@ -8,6 +8,7 @@ const updateSchema = z.object({
   name: z.string().min(2).optional(),
   description: z.string().nullable().optional(),
   budget: z.number().positive().optional(),
+  advanceAmount: z.number().min(0).optional(),
 });
 
 async function getProjectOrFail(id: string, userId: string) {
@@ -37,6 +38,7 @@ export async function GET(
         },
       },
       expenses: { orderBy: { date: "desc" } },
+      cobros: { orderBy: { date: "desc" } },
       materialOrders: {
         orderBy: { orderDate: "desc" },
         include: { items: { orderBy: { createdAt: "asc" } } },
@@ -77,6 +79,14 @@ export async function PUT(
     description: data.description ?? existing.description,
     budget: data.budget ?? existing.budget,
   };
+
+  // El adelanto solo se edita a mano mientras la obra no tenga cobros
+  // cargados: con historial, Project.advanceAmount es la suma de los cobros.
+  const cobrosCount = await prisma.cobro.count({
+    where: { projectId: params.id },
+  });
+  if (cobrosCount === 0)
+    updateData.advanceAmount = data.advanceAmount ?? existing.advanceAmount;
 
   if (data.budget !== undefined && data.budget !== existing.budget) {
     const diff = data.budget - existing.budget;

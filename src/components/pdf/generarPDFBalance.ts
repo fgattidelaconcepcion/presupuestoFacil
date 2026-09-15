@@ -1,4 +1,11 @@
-import type { Project, Payroll, Expense, Employee } from "@/types";
+import type {
+  Project,
+  Payroll,
+  Expense,
+  Employee,
+  MaterialOrder,
+  Cobro,
+} from "@/types";
 import { LOGO_PDF } from "./logoBase64";
 
 interface EmployeeSummary {
@@ -13,6 +20,8 @@ export async function generarPDFBalance(
     employees: Employee[];
     payrolls: Payroll[];
     expenses: Expense[];
+    materialOrders?: MaterialOrder[];
+    cobros?: Cobro[];
   },
 ) {
   const jsPDF = (await import("jspdf")).default;
@@ -72,8 +81,13 @@ export async function generarPDFBalance(
 
   const totalEmployeeCost = empSummaries.reduce((s, e) => s + e.totalAmount, 0);
   const totalExpenses = project.expenses.reduce((s, e) => s + e.amount, 0);
-  const totalSpent = totalEmployeeCost + totalExpenses;
+  const totalMateriales = (project.materialOrders ?? [])
+    .flatMap((o) => o.items ?? [])
+    .reduce((s, i) => s + (i.unitPrice ?? 0) * i.quantityOrdered, 0);
+  const totalSpent = totalEmployeeCost + totalExpenses + totalMateriales;
   const budgetUsedPct = ((totalSpent / project.budget) * 100).toFixed(1);
+  const cobrado = project.advanceAmount ?? 0;
+  const faltaCobrar = Math.max(0, project.budget - cobrado);
 
   // ─── HEADER ───────────────────────────────────────────────────
   doc.setFillColor(...blue);
@@ -197,35 +211,99 @@ export async function generarPDFBalance(
   doc.setDrawColor(...gray200);
   doc.roundedRect(14, y, pageW - 28, 18, 3, 3, "S");
 
-  const halfW = (pageW - 28) / 2;
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(100, 116, 139);
-  doc.text("COSTO PERSONAL (EMPLEADOS)", 14 + halfW / 2, y + 6, {
-    align: "center",
-  });
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...dark);
-  doc.text(fmt(totalEmployeeCost), 14 + halfW / 2, y + 14, { align: "center" });
-
-  doc.setDrawColor(...gray200);
-  doc.line(14 + halfW, y + 2, 14 + halfW, y + 16);
-
-  doc.setFontSize(7.5);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(100, 116, 139);
-  doc.text("GASTOS EXTRAS / MATERIALES", 14 + halfW + halfW / 2, y + 6, {
-    align: "center",
-  });
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "bold");
-  doc.setTextColor(...dark);
-  doc.text(fmt(totalExpenses), 14 + halfW + halfW / 2, y + 14, {
-    align: "center",
+  const thirdW = (pageW - 28) / 3;
+  const subCols: [string, number][] = [
+    ["COSTO PERSONAL", totalEmployeeCost],
+    ["MATERIALES", totalMateriales],
+    ["GASTOS EXTRAS", totalExpenses],
+  ];
+  subCols.forEach(([label, valor], idx) => {
+    const cx = 14 + thirdW * idx + thirdW / 2;
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(100, 116, 139);
+    doc.text(label, cx, y + 6, { align: "center" });
+    doc.setFontSize(11);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...dark);
+    doc.text(fmt(valor), cx, y + 14, { align: "center" });
+    if (idx > 0) {
+      doc.setDrawColor(...gray200);
+      doc.line(14 + thirdW * idx, y + 2, 14 + thirdW * idx, y + 16);
+    }
   });
 
-  y += 26;
+  y += 24;
+
+  // ─── COBRANZA (adelanto vs. saldo del cliente) ────────────────
+  if (cobrado > 0) {
+    doc.setFillColor(...gray50);
+    doc.roundedRect(14, y, pageW - 28, 16, 3, 3, "F");
+    doc.setDrawColor(...gray200);
+    doc.roundedRect(14, y, pageW - 28, 16, 3, 3, "S");
+
+    const cobCols: [string, number][] = [
+      ["COBRADO AL CLIENTE", cobrado],
+      ["FALTA COBRAR", faltaCobrar],
+      ["DISPONIBLE DE LO COBRADO", cobrado - totalSpent],
+    ];
+    cobCols.forEach(([label, valor], idx) => {
+      const cx = 14 + thirdW * idx + thirdW / 2;
+      doc.setFontSize(7);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(100, 116, 139);
+      doc.text(label, cx, y + 6, { align: "center" });
+      doc.setFontSize(10);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(...(idx === 2 && valor < 0 ? red : dark));
+      doc.text(fmt(valor), cx, y + 12.5, { align: "center" });
+      if (idx > 0) {
+        doc.setDrawColor(...gray200);
+        doc.line(14 + thirdW * idx, y + 2, 14 + thirdW * idx, y + 14);
+      }
+    });
+
+    y += 24;
+
+    // Detalle de cobros (si se cargaron uno por uno)
+    const cobros = project.cobros ?? [];
+    if (cobros.length > 0) {
+      autoTable(doc, {
+        startY: y,
+        head: [["Fecha", "Detalle", "Monto"]],
+        body: cobros.map((c) => [
+          fmtDate(c.date),
+          c.note || "Cobro",
+          fmt(c.amount),
+        ]),
+        foot: [["", "TOTAL COBRADO", fmt(cobrado)]],
+        headStyles: {
+          fillColor: [51, 65, 85],
+          textColor: white,
+          fontStyle: "bold",
+          fontSize: 7.5,
+          cellPadding: 2.5,
+        },
+        footStyles: {
+          fillColor: gray50,
+          textColor: dark,
+          fontStyle: "bold",
+          fontSize: 8.5,
+        },
+        bodyStyles: { fontSize: 8.5, textColor: dark, cellPadding: 2.5 },
+        alternateRowStyles: { fillColor: gray50 },
+        columnStyles: {
+          0: { cellWidth: 28 },
+          1: { halign: "left" },
+          2: { cellWidth: 32, halign: "right", fontStyle: "bold" },
+        },
+        margin: { left: 14, right: 14 },
+      });
+      y = (doc as any).lastAutoTable.finalY + 10;
+    }
+  } else {
+    y += 2;
+  }
 
   // ─── TABLA EMPLEADOS ─────────────────────────────────────────
   doc.setFontSize(11);

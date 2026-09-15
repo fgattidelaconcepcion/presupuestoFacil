@@ -8,6 +8,8 @@ const createSchema = z.object({
   name: z.string().min(2),
   description: z.string().optional(),
   budget: z.number().positive(),
+  /** Plata ya cobrada al cliente (adelanto / seña). Opcional, default 0. */
+  advanceAmount: z.number().min(0).optional(),
 });
 
 export async function GET() {
@@ -34,10 +36,17 @@ export async function POST(req: NextRequest) {
 
   const userId = (session.user as { id?: string }).id!;
   const body = await req.json();
-  const { name, description, budget } = createSchema.parse(body);
+  const { name, description, budget, advanceAmount } = createSchema.parse(body);
 
   const project = await prisma.project.create({
-    data: { name, description, budget, budgetRemaining: budget, userId },
+    data: {
+      name,
+      description,
+      budget,
+      budgetRemaining: budget,
+      advanceAmount: advanceAmount ?? 0,
+      userId,
+    },
   });
 
   return NextResponse.json(project, { status: 201 });

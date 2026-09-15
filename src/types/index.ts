@@ -10,10 +10,21 @@ export interface Project {
   description?: string;
   budget: number;
   budgetRemaining: number;
+  /** Plata que el cliente ya entregó (adelanto / seña / pagos parciales). */
+  advanceAmount: number;
   status: "active" | "finished";
   active: boolean;
   createdAt: string;
   employeeCount?: number;
+}
+
+export interface Cobro {
+  id: string;
+  projectId: string;
+  amount: number;
+  date: string;
+  note?: string | null;
+  createdAt: string;
 }
 
 export interface Employee {
@@ -75,6 +86,8 @@ export interface MaterialItem {
   unit: string;
   quantityOrdered: number;
   quantityReceived: number;
+  /** Precio por unidad. 0 = sin precio cargado (no descuenta del presupuesto). */
+  unitPrice: number;
   received: boolean;
   receivedAt?: string | null;
   notes?: string | null;

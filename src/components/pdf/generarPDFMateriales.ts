@@ -38,6 +38,13 @@ export async function generarPDFMateriales(
   const num = (n: number) =>
     new Intl.NumberFormat("es-AR", { maximumFractionDigits: 2 }).format(n);
 
+  const fmtMoney = (n: number) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 2,
+    }).format(n);
+
   const fmtDate = (d: string) =>
     new Date(d).toLocaleDateString("es-AR", {
       day: "2-digit",
@@ -59,6 +66,10 @@ export async function generarPDFMateriales(
     .filter((o) => o.items.length > 0);
 
   const allItems = filtrados.flatMap((o) => o.items);
+  const totalMateriales = allItems.reduce(
+    (acc, i) => acc + (i.unitPrice ?? 0) * i.quantityOrdered,
+    0,
+  );
   const totalItems = allItems.length;
   const completos = allItems.filter((i) => estadoItem(i) === "Completo").length;
   const parciales = allItems.filter((i) => estadoItem(i) === "Parcial").length;
@@ -144,7 +155,20 @@ export async function generarPDFMateriales(
       doc.line(14 + colW * idx, y + 4, 14 + colW * idx, y + 20);
     }
   });
-  y += 32;
+  y += 30;
+
+  if (totalMateriales > 0) {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...dark);
+    doc.text(
+      `Total en materiales: ${fmtMoney(totalMateriales)}`,
+      pageW - 14,
+      y,
+      { align: "right" },
+    );
+    y += 8;
+  }
 
   // ── Tablas por pedido ───────────────────────────────────
   if (filtrados.length === 0) {
@@ -174,10 +198,17 @@ export async function generarPDFMateriales(
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7.5);
     doc.setTextColor(186, 207, 255);
+    const costoPedido = order.items.reduce(
+      (acc, i) => acc + (i.unitPrice ?? 0) * i.quantityOrdered,
+      0,
+    );
+    const conPrecio = costoPedido > 0;
+
     const meta = [
       fmtDate(order.orderDate),
       order.supplier ? `Proveedor: ${order.supplier}` : null,
       `${recibidosOrden}/${order.items.length} completos`,
+      conPrecio ? `Total: ${fmtMoney(costoPedido)}` : null,
     ]
       .filter(Boolean)
       .join("   ·   ");
@@ -185,10 +216,20 @@ export async function generarPDFMateriales(
     y += 17;
 
     const head = [
-      ["#", "Material", "Unidad", "Pedido", "Recibido", "Falta", "Estado"],
+      [
+        "#",
+        "Material",
+        "Unidad",
+        "Pedido",
+        "Recibido",
+        "Falta",
+        ...(conPrecio ? ["P. unit.", "Importe"] : []),
+        "Estado",
+      ],
     ];
     const body = order.items.map((i, idx) => {
       const falta = Math.max(0, i.quantityOrdered - i.quantityReceived);
+      const precio = i.unitPrice ?? 0;
       return [
         String(idx + 1),
         i.notes ? `${i.name}\n${i.notes}` : i.name,
@@ -196,9 +237,17 @@ export async function generarPDFMateriales(
         num(i.quantityOrdered),
         num(i.quantityReceived),
         falta > 0 ? num(falta) : "—",
+        ...(conPrecio
+          ? [
+              precio > 0 ? fmtMoney(precio) : "—",
+              precio > 0 ? fmtMoney(precio * i.quantityOrdered) : "—",
+            ]
+          : []),
         estadoItem(i),
       ];
     });
+
+    const idxEstado = conPrecio ? 8 : 6;
 
     autoTable(doc, {
       startY: y,
@@ -217,15 +266,21 @@ export async function generarPDFMateriales(
       columnStyles: {
         0: { cellWidth: 8, halign: "center" },
         1: { halign: "left" },
-        2: { cellWidth: 16, halign: "center" },
-        3: { cellWidth: 18, halign: "right" },
-        4: { cellWidth: 20, halign: "right", fontStyle: "bold" },
-        5: { cellWidth: 16, halign: "right" },
-        6: { cellWidth: 22, halign: "center", fontStyle: "bold" },
-      },
+        2: { cellWidth: 14, halign: "center" },
+        3: { cellWidth: 16, halign: "right" },
+        4: { cellWidth: 18, halign: "right", fontStyle: "bold" },
+        5: { cellWidth: 14, halign: "right" },
+        ...(conPrecio
+          ? {
+              6: { cellWidth: 20, halign: "right" },
+              7: { cellWidth: 22, halign: "right", fontStyle: "bold" },
+            }
+          : {}),
+        [idxEstado]: { cellWidth: 20, halign: "center", fontStyle: "bold" },
+      } as any,
       margin: { left: 14, right: 14 },
       didParseCell: (data: any) => {
-        if (data.section === "body" && data.column.index === 6) {
+        if (data.section === "body" && data.column.index === idxEstado) {
           const v = String(data.cell.raw);
           if (v === "Completo") data.cell.styles.textColor = green;
           else if (v === "Parcial") data.cell.styles.textColor = amber;

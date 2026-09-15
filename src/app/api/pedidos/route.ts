@@ -2,12 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { orderCost } from "@/lib/materiales";
 import { z } from "zod";
 
 const itemSchema = z.object({
   name: z.string().min(1, "El material necesita un nombre"),
   unit: z.string().min(1).max(20).default("un"),
   quantityOrdered: z.number().positive("La cantidad debe ser mayor a 0"),
+  /** Precio por unidad. 0 o vacío = sin precio (no descuenta del presupuesto). */
+  unitPrice: z.number().min(0).optional(),
   notes: z.string().max(300).nullable().optional(),
 });
 
@@ -67,28 +70,49 @@ export async function POST(req: NextRequest) {
   if (!project)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  const order = await prisma.materialOrder.create({
-    data: {
-      projectId,
-      name,
-      supplier: supplier || null,
-      notes: notes || null,
-      orderDate: orderDate ? new Date(orderDate) : new Date(),
-      status: "pending",
-      items: items?.length
-        ? {
-            create: items.map((i) => ({
-              name: i.name,
-              unit: i.unit || "un",
-              quantityOrdered: i.quantityOrdered,
-              quantityReceived: 0,
-              received: false,
-              notes: i.notes || null,
-            })),
-          }
-        : undefined,
-    },
-    include: { items: { orderBy: { createdAt: "asc" } } },
+  // Los materiales con precio descuentan del presupuesto al cargarse.
+  const costo = orderCost(items ?? []);
+  if (costo > 0 && project.budgetRemaining < costo)
+    return NextResponse.json(
+      {
+        error: `Presupuesto insuficiente. Disponible: $${project.budgetRemaining.toFixed(2)}, requerido: $${costo.toFixed(2)}`,
+      },
+      { status: 400 },
+    );
+
+  const order = await prisma.$transaction(async (tx) => {
+    const created = await tx.materialOrder.create({
+      data: {
+        projectId,
+        name,
+        supplier: supplier || null,
+        notes: notes || null,
+        orderDate: orderDate ? new Date(orderDate) : new Date(),
+        status: "pending",
+        items: items?.length
+          ? {
+              create: items.map((i) => ({
+                name: i.name,
+                unit: i.unit || "un",
+                quantityOrdered: i.quantityOrdered,
+                quantityReceived: 0,
+                received: false,
+                unitPrice: i.unitPrice ?? 0,
+                notes: i.notes || null,
+              })),
+            }
+          : undefined,
+      },
+      include: { items: { orderBy: { createdAt: "asc" } } },
+    });
+
+    if (costo > 0)
+      await tx.project.update({
+        where: { id: projectId },
+        data: { budgetRemaining: { decrement: costo } },
+      });
+
+    return created;
   });
 
   return NextResponse.json(order, { status: 201 });

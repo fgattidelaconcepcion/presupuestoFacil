@@ -5,7 +5,17 @@ import Link from 'next/link';
 
 export default function NuevaObraPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ name: '', description: '', budget: '' });
+  const [form, setForm] = useState({
+    name: '',
+    description: '',
+    budget: '',
+    advanceAmount: '',
+  });
+
+  const num = (v: string) => {
+    const n = parseFloat(String(v).replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+  };
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -17,7 +27,11 @@ export default function NuevaObraPage() {
     const res = await fetch('/api/obras', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, budget: parseFloat(form.budget) }),
+      body: JSON.stringify({
+        ...form,
+        budget: num(form.budget),
+        advanceAmount: num(form.advanceAmount),
+      }),
     });
 
     const data = await res.json();
@@ -83,6 +97,46 @@ export default function NuevaObraPage() {
                 placeholder="0.00"
               />
             </div>
+          </div>
+
+          <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-3.5">
+            <label className="block text-sm font-medium text-emerald-900 mb-1.5">
+              Adelanto cobrado (opcional)
+            </label>
+            <div className="relative">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-medium">$</span>
+              <input
+                type="number"
+                value={form.advanceAmount}
+                onChange={(e) => setForm((p) => ({ ...p, advanceAmount: e.target.value }))}
+                min="0"
+                step="0.01"
+                className="w-full pl-8 pr-3.5 py-2.5 rounded-xl border border-emerald-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                placeholder="0.00"
+              />
+            </div>
+            <div className="flex gap-1.5 mt-2">
+              {[30, 50, 70, 100].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  onClick={() =>
+                    setForm((p) => ({
+                      ...p,
+                      advanceAmount: ((num(p.budget) * pct) / 100).toFixed(2),
+                    }))
+                  }
+                  className="flex-1 py-1.5 rounded-lg border border-emerald-200 bg-white text-xs text-emerald-700 font-semibold hover:bg-emerald-100 transition"
+                >
+                  {pct}%
+                </button>
+              ))}
+            </div>
+            <p className="text-xs text-emerald-700/80 mt-2 leading-relaxed">
+              Lo que el cliente ya te entregó. Los jornales, materiales y gastos
+              se descuentan de esta plata, no del total. Lo podés cambiar
+              después cuando te paguen el resto.
+            </p>
           </div>
 
           {error && (

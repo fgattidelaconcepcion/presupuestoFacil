@@ -15,6 +15,8 @@ const getBarColor = (pct: number) => {
 const ProjectCard = ({ p }: { p: Project }) => {
   // Asegura que el porcentaje siempre esté entre 0 y 100
   const pct = Math.max(0, Math.min(100, (p.budgetRemaining / p.budget) * 100));
+  const cobrado = p.advanceAmount ?? 0;
+  const disponible = cobrado - (p.budget - p.budgetRemaining);
 
   return (
     <Link href={`/dashboard/obra/${p.id}`}>
@@ -62,6 +64,21 @@ const ProjectCard = ({ p }: { p: Project }) => {
             Total: {formatCurrency(p.budget)}
           </span>
         </div>
+        {cobrado > 0 && (
+          <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between text-xs">
+            <span className="text-slate-500">
+              Plata disponible:{" "}
+              <span
+                className={`font-bold ${disponible < 0 ? "text-red-500" : "text-emerald-600"}`}
+              >
+                {formatCurrency(disponible)}
+              </span>
+            </span>
+            <span className="text-slate-400">
+              Falta cobrar: {formatCurrency(Math.max(0, p.budget - cobrado))}
+            </span>
+          </div>
+        )}
       </div>
     </Link>
   );

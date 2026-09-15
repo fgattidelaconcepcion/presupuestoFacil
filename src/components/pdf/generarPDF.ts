@@ -119,14 +119,17 @@ export async function generarPDF(
   y += 30;
 
   // Budget summary
+  const spent = project.budget - project.budgetRemaining;
+  const pct = ((project.budgetRemaining / project.budget) * 100).toFixed(1);
+  const cobradoPdf = project.advanceAmount ?? 0;
+  const boxH = cobradoPdf > 0 ? 24 : 18;
+
   doc.setFillColor(...blue);
-  doc.roundedRect(14, y, pageW - 28, 18, 3, 3, "F");
+  doc.roundedRect(14, y, pageW - 28, boxH, 3, 3, "F");
   doc.setFontSize(7);
   doc.setFont("helvetica", "bold");
   doc.setTextColor(...white);
   doc.text("RESUMEN PRESUPUESTO", 20, y + 7);
-  const spent = project.budget - project.budgetRemaining;
-  const pct = ((project.budgetRemaining / project.budget) * 100).toFixed(1);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(8);
   doc.setTextColor(186, 207, 255);
@@ -135,7 +138,14 @@ export async function generarPDF(
     20,
     y + 14,
   );
-  y += 26;
+  if (cobradoPdf > 0) {
+    doc.text(
+      `Cobrado: ${fmt(cobradoPdf)}   ·   Disponible: ${fmt(cobradoPdf - spent)}   ·   Falta cobrar: ${fmt(Math.max(0, project.budget - cobradoPdf))}`,
+      20,
+      y + 20,
+    );
+  }
+  y += boxH + 8;
 
   // Attendance table
   doc.setFontSize(11);

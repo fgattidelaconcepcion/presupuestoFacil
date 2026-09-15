@@ -23,6 +23,7 @@ model Project {
   description      String?
   budget           Float
   budgetRemaining  Float
+  advanceAmount    Float     @default(0)
   status           String    @default("active")
   userId           String
   user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -30,9 +31,22 @@ model Project {
   payrolls         Payroll[]
   expenses         Expense[]
   materialOrders   MaterialOrder[]
+  cobros           Cobro[]
   active           Boolean   @default(true)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+}
+
+/// Plata que el cliente entrega: adelanto/seña y pagos parciales.
+/// La suma de los cobros se cachea en Project.advanceAmount.
+model Cobro {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  amount    Float
+  date      DateTime @default(now())
+  note      String?
+  createdAt DateTime @default(now())
 }
 
 model Employee {
@@ -119,6 +133,7 @@ model MaterialItem {
   unit             String        @default("un")
   quantityOrdered  Float         @default(1)
   quantityReceived Float         @default(0)
+  unitPrice        Float         @default(0)
   received         Boolean       @default(false)
   receivedAt       DateTime?
   notes            String?

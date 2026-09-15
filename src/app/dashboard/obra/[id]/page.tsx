@@ -12,6 +12,7 @@ import type {
   Payment,
   MaterialOrder,
   MaterialItem,
+  Cobro,
 } from "@/types";
 import { generarPDF } from "@/components/pdf/generarPDF";
 import { generarPDFGastos } from "@/components/pdf/generarPDFGastos";
@@ -23,6 +24,7 @@ type Tab =
   | "empleados"
   | "materiales"
   | "gastos"
+  | "cobros"
   | "historial";
 
 interface ProjectDetail extends Project {
@@ -30,9 +32,17 @@ interface ProjectDetail extends Project {
   payrolls: (Payroll & { payments?: Payment[] })[];
   expenses: Expense[];
   materialOrders: MaterialOrder[];
+  cobros: Cobro[];
 }
 
 const UNIDADES = ["un", "m", "m²", "m³", "kg", "bolsa", "chapa", "caja", "rollo", "lt"];
+
+/** Convierte lo tipeado a número (acepta coma decimal). 0 si está vacío. */
+function parseNum(v: string | number | null | undefined): number {
+  if (v === null || v === undefined || v === "") return 0;
+  const n = parseFloat(String(v).replace(",", "."));
+  return isNaN(n) ? 0 : n;
+}
 
 function itemEstado(i: MaterialItem): "completo" | "parcial" | "pendiente" {
   if (i.received || i.quantityReceived >= i.quantityOrdered) return "completo";
@@ -87,6 +97,7 @@ export default function ObraDetailPage() {
     name: "",
     description: "",
     budget: "",
+    advanceAmount: "",
   });
   const [obraLoading, setObraLoading] = useState(false);
   const [showFinalizar, setShowFinalizar] = useState(false);
@@ -108,6 +119,22 @@ export default function ObraDetailPage() {
     date: "",
   });
 
+  // ── Cobros state (plata que entrega el cliente) ───────
+  const [showCobroForm, setShowCobroForm] = useState(false);
+  const [cobroForm, setCobroForm] = useState({
+    amount: "",
+    date: new Date().toISOString().split("T")[0],
+    note: "",
+  });
+  const [cobroLoading, setCobroLoading] = useState(false);
+  const [cobroError, setCobroError] = useState("");
+  const [editingCobro, setEditingCobro] = useState<Cobro | null>(null);
+  const [editCobroForm, setEditCobroForm] = useState({
+    amount: "",
+    date: "",
+    note: "",
+  });
+
   // ── Materiales state ──────────────────────────────────
   const [showPedidoForm, setShowPedidoForm] = useState(false);
   const [pedidoForm, setPedidoForm] = useState({
@@ -123,6 +150,7 @@ export default function ObraDetailPage() {
     name: "",
     quantityOrdered: "",
     unit: "un",
+    unitPrice: "",
     notes: "",
   });
   const [itemLoading, setItemLoading] = useState(false);
@@ -133,6 +161,7 @@ export default function ObraDetailPage() {
     quantityOrdered: "",
     quantityReceived: "",
     unit: "un",
+    unitPrice: "",
     notes: "",
   });
   const [editingPedido, setEditingPedido] = useState<MaterialOrder | null>(
@@ -342,7 +371,8 @@ export default function ObraDetailPage() {
       body: JSON.stringify({
         name: obraForm.name,
         description: obraForm.description,
-        budget: parseFloat(obraForm.budget),
+        budget: parseNum(obraForm.budget),
+        advanceAmount: parseNum(obraForm.advanceAmount),
       }),
     });
     setObraLoading(false);
@@ -420,6 +450,65 @@ export default function ObraDetailPage() {
     fetchProject();
   }
 
+  // ── Cobros ────────────────────────────────────────────
+  async function addCobro() {
+    if (!project || !cobroForm.amount) return;
+    setCobroLoading(true);
+    setCobroError("");
+    const res = await fetch("/api/cobros", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: project.id,
+        amount: parseNum(cobroForm.amount),
+        date: cobroForm.date,
+        note: cobroForm.note || null,
+      }),
+    });
+    const data = await res.json();
+    setCobroLoading(false);
+    if (!res.ok) {
+      setCobroError(data.error ?? "Error al registrar el cobro");
+      return;
+    }
+    setCobroForm({
+      amount: "",
+      date: new Date().toISOString().split("T")[0],
+      note: "",
+    });
+    setShowCobroForm(false);
+    fetchProject();
+  }
+
+  async function saveCobro() {
+    if (!editingCobro) return;
+    setCobroLoading(true);
+    setCobroError("");
+    const res = await fetch(`/api/cobros/${editingCobro.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        amount: parseNum(editCobroForm.amount),
+        date: editCobroForm.date,
+        note: editCobroForm.note || null,
+      }),
+    });
+    const data = await res.json();
+    setCobroLoading(false);
+    if (!res.ok) {
+      setCobroError(data.error ?? "Error al guardar el cobro");
+      return;
+    }
+    setEditingCobro(null);
+    fetchProject();
+  }
+
+  async function deleteCobro(cobroId: string) {
+    if (!confirm("¿Eliminar este cobro?")) return;
+    await fetch(`/api/cobros/${cobroId}`, { method: "DELETE" });
+    fetchProject();
+  }
+
   // ── Materiales ────────────────────────────────────────
   async function addPedido() {
     if (!project || !pedidoForm.name) return;
@@ -485,7 +574,8 @@ export default function ObraDetailPage() {
       body: JSON.stringify({
         name: itemForm.name,
         unit: itemForm.unit || "un",
-        quantityOrdered: parseFloat(itemForm.quantityOrdered),
+        quantityOrdered: parseNum(itemForm.quantityOrdered),
+        unitPrice: parseNum(itemForm.unitPrice),
         notes: itemForm.notes || null,
       }),
     });
@@ -495,7 +585,13 @@ export default function ObraDetailPage() {
       setItemError(data.error ?? "Error al agregar el material");
       return;
     }
-    setItemForm({ name: "", quantityOrdered: "", unit: itemForm.unit, notes: "" });
+    setItemForm({
+      name: "",
+      quantityOrdered: "",
+      unit: itemForm.unit,
+      unitPrice: "",
+      notes: "",
+    });
     await fetchProject();
   }
 
@@ -547,18 +643,25 @@ export default function ObraDetailPage() {
   async function saveEditItem() {
     if (!editingItem) return;
     setItemLoading(true);
-    await fetch(`/api/materiales/${editingItem.id}`, {
+    setItemError("");
+    const res = await fetch(`/api/materiales/${editingItem.id}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: editItemForm.name,
         unit: editItemForm.unit || "un",
-        quantityOrdered: parseFloat(editItemForm.quantityOrdered),
-        quantityReceived: parseFloat(editItemForm.quantityReceived || "0"),
+        quantityOrdered: parseNum(editItemForm.quantityOrdered),
+        quantityReceived: parseNum(editItemForm.quantityReceived),
+        unitPrice: parseNum(editItemForm.unitPrice),
         notes: editItemForm.notes || null,
       }),
     });
     setItemLoading(false);
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      setItemError(data.error ?? "Error al guardar el material");
+      return;
+    }
     setEditingItem(null);
     fetchProject();
   }
@@ -612,6 +715,27 @@ export default function ObraDetailPage() {
 
   const orders = project.materialOrders ?? [];
   const allMatItems = orders.flatMap((o) => o.items);
+
+  // ── Plata: adelanto cobrado vs. gastado ──────────────────────────
+  const totalMateriales = allMatItems.reduce(
+    (s, i) => s + (i.unitPrice ?? 0) * i.quantityOrdered,
+    0,
+  );
+  const gastado = project.budget - project.budgetRemaining;
+  const totalPersonal = Math.max(0, gastado - totalExpenses - totalMateriales);
+  /** Plata que el cliente ya entregó (suma de los cobros). */
+  const cobrado = project.advanceAmount ?? 0;
+  const cobros = project.cobros ?? [];
+  /** Plata que realmente queda en mano (del adelanto). Puede ser negativa. */
+  const disponible = cobrado - gastado;
+  const faltaCobrar = Math.max(0, project.budget - cobrado);
+  const consumoPct =
+    cobrado > 0
+      ? (gastado / cobrado) * 100
+      : project.budget > 0
+        ? (gastado / project.budget) * 100
+        : 0;
+  const barPct = Math.max(0, Math.min(100, consumoPct));
   const matPendientes = allMatItems.filter(
     (i) => itemEstado(i) !== "completo",
   ).length;
@@ -663,6 +787,7 @@ export default function ObraDetailPage() {
                 name: project.name,
                 description: project.description ?? "",
                 budget: project.budget.toString(),
+                advanceAmount: String(project.advanceAmount ?? 0),
               });
             }}
             className="text-slate-400 hover:text-primary-600 p-1"
@@ -732,6 +857,85 @@ export default function ObraDetailPage() {
                   className="flex-1 py-2.5 rounded-xl bg-primary-600 text-white text-sm font-semibold disabled:opacity-50"
                 >
                   {pedidoLoading ? "Guardando..." : "Guardar"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingCobro && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+            <h3 className="font-bold text-slate-800 mb-1">Editar cobro</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              El total cobrado se recalcula solo
+            </p>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-500 font-medium mb-1 block">
+                    Monto
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      value={editCobroForm.amount}
+                      onChange={(e) =>
+                        setEditCobroForm((p) => ({
+                          ...p,
+                          amount: e.target.value,
+                        }))
+                      }
+                      min="0"
+                      step="0.01"
+                      className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 font-medium mb-1 block">
+                    Fecha
+                  </label>
+                  <input
+                    type="date"
+                    value={editCobroForm.date}
+                    onChange={(e) =>
+                      setEditCobroForm((p) => ({ ...p, date: e.target.value }))
+                    }
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                  />
+                </div>
+              </div>
+              <input
+                type="text"
+                value={editCobroForm.note}
+                onChange={(e) =>
+                  setEditCobroForm((p) => ({ ...p, note: e.target.value }))
+                }
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                placeholder="Nota (opcional)"
+              />
+              {cobroError && <p className="text-red-500 text-xs">{cobroError}</p>}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => {
+                    setEditingCobro(null);
+                    setCobroError("");
+                  }}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-500 text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={saveCobro}
+                  disabled={cobroLoading || !editCobroForm.amount}
+                  className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-sm font-semibold disabled:opacity-50"
+                >
+                  {cobroLoading ? "Guardando..." : "Guardar"}
                 </button>
               </div>
             </div>
@@ -885,6 +1089,35 @@ export default function ObraDetailPage() {
               </div>
               <div>
                 <label className="text-xs text-slate-500 font-medium mb-1 block">
+                  Precio por unidad (opcional)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                    $
+                  </span>
+                  <input
+                    type="number"
+                    value={editItemForm.unitPrice}
+                    onChange={(e) =>
+                      setEditItemForm((p) => ({
+                        ...p,
+                        unitPrice: e.target.value,
+                      }))
+                    }
+                    min="0"
+                    step="0.01"
+                    className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                    placeholder="0.00"
+                  />
+                </div>
+                <p className="text-xs text-slate-400 mt-1">
+                  {parseNum(editItemForm.unitPrice) > 0
+                    ? `Total del material: ${formatCurrency(parseNum(editItemForm.unitPrice) * parseNum(editItemForm.quantityOrdered))}`
+                    : "Sin precio: no descuenta del presupuesto"}
+                </p>
+              </div>
+              <div>
+                <label className="text-xs text-slate-500 font-medium mb-1 block">
                   Unidad
                 </label>
                 <select
@@ -910,9 +1143,13 @@ export default function ObraDetailPage() {
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 placeholder="Nota (opcional)"
               />
+              {itemError && <p className="text-red-500 text-xs">{itemError}</p>}
               <div className="flex gap-2 pt-1">
                 <button
-                  onClick={() => setEditingItem(null)}
+                  onClick={() => {
+                    setEditingItem(null);
+                    setItemError("");
+                  }}
                   className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-500 text-sm"
                 >
                   Cancelar
@@ -957,20 +1194,109 @@ export default function ObraDetailPage() {
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm resize-none"
                 placeholder="Descripción"
               />
-              <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-                  $
-                </span>
-                <input
-                  type="number"
-                  value={obraForm.budget}
-                  onChange={(e) =>
-                    setObraForm((p) => ({ ...p, budget: e.target.value }))
-                  }
-                  className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                  placeholder="Presupuesto"
-                />
+              <div>
+                <label className="text-xs text-slate-500 font-medium mb-1 block">
+                  Presupuesto total
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                    $
+                  </span>
+                  <input
+                    type="number"
+                    value={obraForm.budget}
+                    onChange={(e) =>
+                      setObraForm((p) => ({ ...p, budget: e.target.value }))
+                    }
+                    min="0"
+                    step="0.01"
+                    className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                    placeholder="Presupuesto"
+                  />
+                </div>
               </div>
+
+              {cobros.length === 0 ? (
+                <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-3">
+                  <label className="text-xs text-emerald-800 font-semibold mb-1 block">
+                    Adelanto cobrado
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                      $
+                    </span>
+                    <input
+                      type="number"
+                      value={obraForm.advanceAmount}
+                      onChange={(e) =>
+                        setObraForm((p) => ({
+                          ...p,
+                          advanceAmount: e.target.value,
+                        }))
+                      }
+                      min="0"
+                      step="0.01"
+                      className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-emerald-200 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="flex gap-1.5 mt-2">
+                    {[30, 50, 70, 100].map((pct) => (
+                      <button
+                        key={pct}
+                        type="button"
+                        onClick={() =>
+                          setObraForm((p) => ({
+                            ...p,
+                            advanceAmount: (
+                              (parseNum(p.budget) * pct) /
+                              100
+                            ).toFixed(2),
+                          }))
+                        }
+                        className="flex-1 py-1.5 rounded-lg border border-emerald-200 bg-white text-xs text-emerald-700 font-semibold hover:bg-emerald-100 transition"
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-xs text-emerald-700/80 mt-2 leading-relaxed">
+                    Los jornales, materiales y gastos se descuentan de esta plata.
+                    Falta cobrar:{" "}
+                    <span className="font-semibold">
+                      {formatCurrency(
+                        Math.max(
+                          0,
+                          parseNum(obraForm.budget) -
+                            parseNum(obraForm.advanceAmount),
+                        ),
+                      )}
+                    </span>
+                  </p>
+                </div>
+              ) : (
+                <div className="bg-emerald-50/60 border border-emerald-100 rounded-xl p-3">
+                  <p className="text-xs text-emerald-800 font-semibold">
+                    Cobrado: {formatCurrency(cobrado)}
+                  </p>
+                  <p className="text-xs text-emerald-700/80 mt-1 leading-relaxed">
+                    Sale de la suma de {cobros.length} cobro
+                    {cobros.length !== 1 ? "s" : ""} cargado
+                    {cobros.length !== 1 ? "s" : ""}. Para cambiarlo, editá la
+                    lista en la pestaña Cobros.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingObra(false);
+                      setTab("cobros");
+                    }}
+                    className="mt-2 w-full py-1.5 rounded-lg border border-emerald-200 bg-white text-xs text-emerald-700 font-semibold hover:bg-emerald-100 transition"
+                  >
+                    Ver cobros
+                  </button>
+                </div>
+              )}
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => setEditingObra(false)}
@@ -1042,40 +1368,109 @@ export default function ObraDetailPage() {
         <div className="flex justify-between items-start mb-3">
           <div>
             <p className="text-primary-300 text-xs font-medium uppercase tracking-wide">
-              Presupuesto restante
+              {cobrado > 0 ? "Plata disponible" : "Presupuesto restante"}
             </p>
-            <p className="text-3xl font-bold mt-0.5">
-              {formatCurrency(project.budgetRemaining)}
+            <p
+              className={`text-3xl font-bold mt-0.5 ${cobrado > 0 && disponible < 0 ? "text-red-300" : ""}`}
+            >
+              {formatCurrency(cobrado > 0 ? disponible : project.budgetRemaining)}
             </p>
+            {cobrado > 0 && (
+              <button
+                onClick={() => setTab("cobros")}
+                className="text-primary-300 text-xs mt-0.5 underline decoration-primary-500 underline-offset-2 hover:text-white transition"
+              >
+                de {formatCurrency(cobrado)} cobrados
+                {cobros.length > 0
+                  ? ` en ${cobros.length} pago${cobros.length !== 1 ? "s" : ""}`
+                  : ""}
+              </button>
+            )}
           </div>
           <div className="text-right">
-            <p className="text-primary-300 text-xs">Total inicial</p>
+            <p className="text-primary-300 text-xs">Presupuesto total</p>
             <p className="text-primary-100 font-semibold text-sm">
               {formatCurrency(project.budget)}
             </p>
+            {cobrado > 0 && (
+              <p className="text-amber-300 text-xs mt-1 font-medium">
+                Falta cobrar {formatCurrency(faltaCobrar)}
+              </p>
+            )}
           </div>
         </div>
+
         <div className="h-2 bg-primary-700 rounded-full overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all ${budgetPct > 50 ? "bg-emerald-400" : budgetPct > 20 ? "bg-amber-400" : "bg-red-400"}`}
-            style={{ width: `${budgetPct}%` }}
+            className={`h-full rounded-full transition-all ${barPct > 85 ? "bg-red-400" : barPct > 60 ? "bg-amber-400" : "bg-emerald-400"}`}
+            style={{ width: `${barPct}%` }}
           />
         </div>
         <div className="flex justify-between text-xs text-primary-300 mt-1">
+          <span>Gastado: {formatCurrency(gastado)}</span>
           <span>
-            Gastado: {formatCurrency(project.budget - project.budgetRemaining)}
+            {cobrado > 0
+              ? `${Math.round(consumoPct)}% del adelanto`
+              : `${Math.round(consumoPct)}% del presupuesto`}
           </span>
-          <span>{budgetPct.toFixed(0)}% restante</span>
         </div>
-        {totalExpenses > 0 && (
+
+        {cobrado > 0 && disponible < 0 && (
+          <div className="mt-2.5 bg-red-500/20 border border-red-400/40 rounded-xl px-3 py-2">
+            <p className="text-red-200 text-xs font-semibold">
+              Estás poniendo {formatCurrency(Math.abs(disponible))} de tu bolsillo
+            </p>
+            <p className="text-red-200/80 text-xs">
+              Lo recuperás cuando cobres el resto ({formatCurrency(faltaCobrar)}).
+            </p>
+          </div>
+        )}
+
+        {cobrado === 0 && !isFinished && (
+          <button
+            onClick={() => {
+              setTab("cobros");
+              setShowCobroForm(true);
+              setCobroError("");
+            }}
+            className="mt-2.5 w-full text-left bg-white/10 hover:bg-white/15 transition rounded-xl px-3 py-2"
+          >
+            <p className="text-xs font-semibold text-white">
+              ¿Te adelantaron plata? Registrá el cobro
+            </p>
+            <p className="text-xs text-primary-300">
+              La app descuenta de esa plata, no del total del presupuesto.
+            </p>
+          </button>
+        )}
+
+        <div className="mt-2.5 pt-2.5 border-t border-primary-700 grid grid-cols-3 gap-2 text-center">
+          <div>
+            <p className="text-primary-300 text-[11px]">Personal</p>
+            <p className="text-primary-100 text-xs font-semibold">
+              {formatCurrency(totalPersonal)}
+            </p>
+          </div>
+          <div>
+            <p className="text-primary-300 text-[11px]">Materiales</p>
+            <p className="text-primary-100 text-xs font-semibold">
+              {formatCurrency(totalMateriales)}
+            </p>
+          </div>
+          <div>
+            <p className="text-primary-300 text-[11px]">Gastos extras</p>
+            <p className="text-primary-100 text-xs font-semibold">
+              {formatCurrency(totalExpenses)}
+            </p>
+          </div>
+        </div>
+
+        {cobrado > 0 && (
           <div className="mt-2 pt-2 border-t border-primary-700 flex justify-between text-xs text-primary-300">
-            <span>Gastos extras: {formatCurrency(totalExpenses)}</span>
             <span>
-              Personal:{" "}
-              {formatCurrency(
-                project.budget - project.budgetRemaining - totalExpenses,
-              )}
+              Saldo del presupuesto: {formatCurrency(project.budgetRemaining)}
             </span>
+            <span>{budgetPct.toFixed(0)}% restante</span>
           </div>
         )}
       </div>
@@ -1112,13 +1507,17 @@ export default function ObraDetailPage() {
               PDF Balance
             </button>
           </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="grid grid-cols-4 gap-2 text-center">
             <div className="bg-white/10 rounded-xl p-2">
               <p className="text-emerald-300 text-xs">Personal</p>
               <p className="text-white font-bold text-sm">
-                {formatCurrency(
-                  project.budget - project.budgetRemaining - totalExpenses,
-                )}
+                {formatCurrency(totalPersonal)}
+              </p>
+            </div>
+            <div className="bg-white/10 rounded-xl p-2">
+              <p className="text-emerald-300 text-xs">Materiales</p>
+              <p className="text-white font-bold text-sm">
+                {formatCurrency(totalMateriales)}
               </p>
             </div>
             <div className="bg-white/10 rounded-xl p-2">
@@ -1134,6 +1533,12 @@ export default function ObraDetailPage() {
               </p>
             </div>
           </div>
+          {cobrado > 0 && (
+            <div className="mt-2 flex justify-between text-xs text-emerald-200">
+              <span>Cobrado: {formatCurrency(cobrado)}</span>
+              <span>Falta cobrar: {formatCurrency(faltaCobrar)}</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -1145,6 +1550,7 @@ export default function ObraDetailPage() {
             ["empleados", "Empleados"],
             ["materiales", "Materiales"],
             ["gastos", "Gastos"],
+            ["cobros", "Cobros"],
             ["historial", "Historial"],
           ] as [Tab, string][]
         ).map(([t, label]) => (
@@ -1527,6 +1933,11 @@ export default function ObraDetailPage() {
                   </span>
                 </p>
               )}
+              {totalMateriales > 0 && (
+                <p className="text-xs text-primary-700 font-semibold mt-0.5">
+                  {formatCurrency(totalMateriales)} en materiales
+                </p>
+              )}
             </div>
             {!isFinished && (
               <button
@@ -1675,6 +2086,10 @@ export default function ObraDetailPage() {
                 ).length;
                 const total = order.items.length;
                 const pct = total > 0 ? (completos / total) * 100 : 0;
+                const costoPedido = order.items.reduce(
+                  (s, i) => s + (i.unitPrice ?? 0) * i.quantityOrdered,
+                  0,
+                );
                 const estadoColor =
                   total === 0
                     ? "bg-slate-100 text-slate-500"
@@ -1732,6 +2147,11 @@ export default function ObraDetailPage() {
                               {formatDate(order.orderDate)}
                               {order.supplier ? ` · ${order.supplier}` : ""}
                             </p>
+                            {costoPedido > 0 && (
+                              <p className="text-xs text-primary-700 font-semibold">
+                                {formatCurrency(costoPedido)}
+                              </p>
+                            )}
                           </div>
                         </button>
                         <div className="flex items-center gap-1 shrink-0">
@@ -1888,6 +2308,16 @@ export default function ObraDetailPage() {
                                       </>
                                     )}
                                   </p>
+                                  {(item.unitPrice ?? 0) > 0 && (
+                                    <p className="text-xs text-slate-600 font-medium mt-0.5">
+                                      {formatCurrency(item.unitPrice)} c/u ·{" "}
+                                      <span className="text-primary-700 font-semibold">
+                                        {formatCurrency(
+                                          item.unitPrice * item.quantityOrdered,
+                                        )}
+                                      </span>
+                                    </p>
+                                  )}
                                   {item.notes && (
                                     <p className="text-xs text-slate-400 italic mt-0.5">
                                       {item.notes}
@@ -1909,6 +2339,9 @@ export default function ObraDetailPage() {
                                             item.quantityReceived,
                                           ),
                                           unit: item.unit,
+                                          unitPrice: item.unitPrice
+                                            ? String(item.unitPrice)
+                                            : "",
                                           notes: item.notes ?? "",
                                         });
                                       }}
@@ -2033,6 +2466,41 @@ export default function ObraDetailPage() {
                                     ))}
                                   </select>
                                 </div>
+                                <div className="grid grid-cols-2 gap-2 items-center">
+                                  <div className="relative">
+                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                                      $
+                                    </span>
+                                    <input
+                                      type="number"
+                                      value={itemForm.unitPrice}
+                                      onChange={(e) =>
+                                        setItemForm((p) => ({
+                                          ...p,
+                                          unitPrice: e.target.value,
+                                        }))
+                                      }
+                                      min="0"
+                                      step="0.01"
+                                      className="w-full pl-7 pr-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm"
+                                      placeholder="Precio c/u"
+                                    />
+                                  </div>
+                                  <p className="text-xs text-right pr-1">
+                                    {parseNum(itemForm.unitPrice) > 0 ? (
+                                      <span className="text-slate-700 font-semibold">
+                                        {formatCurrency(
+                                          parseNum(itemForm.unitPrice) *
+                                            parseNum(itemForm.quantityOrdered),
+                                        )}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400">
+                                        Sin precio
+                                      </span>
+                                    )}
+                                  </p>
+                                </div>
                                 {itemError && (
                                   <p className="text-red-500 text-xs">
                                     {itemError}
@@ -2047,6 +2515,7 @@ export default function ObraDetailPage() {
                                         name: "",
                                         quantityOrdered: "",
                                         unit: "un",
+                                        unitPrice: "",
                                         notes: "",
                                       });
                                     }}
@@ -2100,6 +2569,271 @@ export default function ObraDetailPage() {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── TAB: COBROS ────────────────────────────────────── */}
+      {tab === "cobros" && (
+        <div>
+          {/* Resumen de cobranza */}
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 mb-3">
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div>
+                <p className="text-xs text-slate-400">Cobrado</p>
+                <p className="text-sm font-bold text-emerald-600">
+                  {formatCurrency(cobrado)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Falta cobrar</p>
+                <p className="text-sm font-bold text-amber-600">
+                  {formatCurrency(faltaCobrar)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-400">Disponible</p>
+                <p
+                  className={`text-sm font-bold ${disponible < 0 ? "text-red-500" : "text-slate-800"}`}
+                >
+                  {formatCurrency(disponible)}
+                </p>
+              </div>
+            </div>
+            <div className="mt-3 h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full bg-emerald-500 transition-all"
+                style={{
+                  width: `${Math.max(0, Math.min(100, project.budget > 0 ? (cobrado / project.budget) * 100 : 0))}%`,
+                }}
+              />
+            </div>
+            <p className="text-xs text-slate-400 mt-1 text-center">
+              {formatCurrency(cobrado)} de {formatCurrency(project.budget)} del
+              presupuesto
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-semibold text-slate-600">
+              {cobros.length} cobro{cobros.length !== 1 ? "s" : ""} registrado
+              {cobros.length !== 1 ? "s" : ""}
+            </p>
+            {!isFinished && !showCobroForm && (
+              <button
+                onClick={() => {
+                  setShowCobroForm(true);
+                  setCobroError("");
+                }}
+                className="flex items-center gap-1 text-sm text-emerald-700 font-semibold"
+              >
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2.5}
+                    d="M12 4v16m8-8H4"
+                  />
+                </svg>
+                Registrar cobro
+              </button>
+            )}
+          </div>
+
+          {/* Form nuevo cobro */}
+          {showCobroForm && (
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-emerald-100 mb-3">
+              <h4 className="font-semibold text-slate-700 mb-3 text-sm">
+                Nuevo cobro
+              </h4>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-500 font-medium mb-1 block">
+                      Monto
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                        $
+                      </span>
+                      <input
+                        type="number"
+                        value={cobroForm.amount}
+                        onChange={(e) =>
+                          setCobroForm((p) => ({ ...p, amount: e.target.value }))
+                        }
+                        min="0"
+                        step="0.01"
+                        className="w-full pl-7 pr-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                        placeholder="0.00"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 font-medium mb-1 block">
+                      Fecha
+                    </label>
+                    <input
+                      type="date"
+                      value={cobroForm.date}
+                      onChange={(e) =>
+                        setCobroForm((p) => ({ ...p, date: e.target.value }))
+                      }
+                      className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-1.5">
+                  {[30, 50, 70].map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() =>
+                        setCobroForm((p) => ({
+                          ...p,
+                          amount: ((project.budget * pct) / 100).toFixed(2),
+                        }))
+                      }
+                      className="flex-1 py-1.5 rounded-lg border border-slate-200 text-xs text-slate-600 font-semibold hover:bg-slate-50 transition"
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    disabled={faltaCobrar <= 0}
+                    onClick={() =>
+                      setCobroForm((p) => ({
+                        ...p,
+                        amount: faltaCobrar.toFixed(2),
+                      }))
+                    }
+                    className="flex-1 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-xs text-emerald-700 font-semibold hover:bg-emerald-100 transition disabled:opacity-40"
+                  >
+                    Saldo
+                  </button>
+                </div>
+
+                <input
+                  type="text"
+                  value={cobroForm.note}
+                  onChange={(e) =>
+                    setCobroForm((p) => ({ ...p, note: e.target.value }))
+                  }
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-400 text-sm"
+                  placeholder="Nota (ej: seña, transferencia, efectivo)"
+                />
+
+                {cobroError && (
+                  <p className="text-red-500 text-xs">{cobroError}</p>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setShowCobroForm(false);
+                      setCobroError("");
+                    }}
+                    className="flex-1 py-2 rounded-xl border border-slate-200 text-slate-500 text-sm"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={addCobro}
+                    disabled={cobroLoading || !cobroForm.amount}
+                    className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold disabled:opacity-50"
+                  >
+                    {cobroLoading ? "Guardando..." : "Registrar cobro"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de cobros */}
+          {cobros.length === 0 ? (
+            <div className="text-center py-10">
+              <div className="text-4xl mb-3">💵</div>
+              <p className="text-slate-500 text-sm">Todavía no cargaste cobros</p>
+              <p className="text-xs text-slate-400 mt-1">
+                Registrá cada plata que te entrega el cliente y la app descuenta
+                los gastos de ahí.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {cobros.map((c) => (
+                <div
+                  key={c.id}
+                  className="bg-white rounded-xl p-3.5 shadow-sm border border-slate-100 flex items-start justify-between gap-2"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-emerald-700">
+                      {formatCurrency(c.amount)}
+                    </p>
+                    <p className="text-xs text-slate-400 truncate">
+                      {formatDate(c.date)}
+                      {c.note ? ` · ${c.note}` : ""}
+                    </p>
+                  </div>
+                  {!isFinished && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={() => {
+                          setEditingCobro(c);
+                          setCobroError("");
+                          setEditCobroForm({
+                            amount: String(c.amount),
+                            date: new Date(c.date).toISOString().split("T")[0],
+                            note: c.note ?? "",
+                          });
+                        }}
+                        className="p-1.5 text-slate-400 hover:text-primary-600 transition"
+                      >
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"
+                          />
+                        </svg>
+                      </button>
+                      <button
+                        onClick={() => deleteCobro(c.id)}
+                        className="p-1.5 text-slate-400 hover:text-red-500 transition"
+                      >
+                        <svg
+                          className="w-3.5 h-3.5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getOrderOwned } from "@/lib/materiales";
+import { getOrderOwned, orderCost } from "@/lib/materiales";
 import { z } from "zod";
 
 const updateSchema = z.object({
@@ -81,6 +81,20 @@ export async function DELETE(
   if (!owned)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  await prisma.materialOrder.delete({ where: { id: params.id } });
+  // Los materiales con precio devuelven su plata al presupuesto.
+  const items = await prisma.materialItem.findMany({
+    where: { orderId: params.id },
+  });
+  const costo = orderCost(items);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.materialOrder.delete({ where: { id: params.id } });
+    if (costo > 0)
+      await tx.project.update({
+        where: { id: owned.projectId },
+        data: { budgetRemaining: { increment: costo } },
+      });
+  });
+
   return NextResponse.json({ ok: true });
 }
