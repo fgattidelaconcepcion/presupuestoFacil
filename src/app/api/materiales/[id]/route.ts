@@ -68,13 +68,6 @@ export async function PUT(
   const diferencia = Math.round((costoNuevo - costoAnterior) * 100) / 100;
 
   const project = existing.order.project;
-  if (diferencia > 0 && project.budgetRemaining < diferencia)
-    return NextResponse.json(
-      {
-        error: `Presupuesto insuficiente. Disponible: $${project.budgetRemaining.toFixed(2)}`,
-      },
-      { status: 400 },
-    );
 
   const item = await prisma.$transaction(async (tx) => {
     const updated = await tx.materialItem.update({

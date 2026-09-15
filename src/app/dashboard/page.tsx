@@ -56,7 +56,9 @@ const ProjectCard = ({ p }: { p: Project }) => {
         <div className="flex justify-between text-sm">
           <span className="text-slate-500">
             Restante:{" "}
-            <span className="font-bold text-slate-800">
+            <span
+              className={`font-bold ${p.budgetRemaining < 0 ? "text-red-500" : "text-slate-800"}`}
+            >
               {formatCurrency(p.budgetRemaining)}
             </span>
           </span>

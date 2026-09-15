@@ -39,13 +39,6 @@ export async function POST(
 
   // Si el material tiene precio, se descuenta del presupuesto al cargarlo.
   const costo = itemCost(unitPrice, quantityOrdered);
-  if (costo > 0 && owned.project.budgetRemaining < costo)
-    return NextResponse.json(
-      {
-        error: `Presupuesto insuficiente. Disponible: $${owned.project.budgetRemaining.toFixed(2)}, requerido: $${costo.toFixed(2)}`,
-      },
-      { status: 400 },
-    );
 
   const item = await prisma.$transaction(async (tx) => {
     const created = await tx.materialItem.create({

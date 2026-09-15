@@ -48,15 +48,8 @@ export async function PUT(
 
   const diferencia = amount - expense.amount;
 
-  // Solo hay que validar presupuesto si el gasto AUMENTA.
-  if (diferencia > 0 && expense.project.budgetRemaining < diferencia)
-    return NextResponse.json(
-      {
-        error: `Presupuesto insuficiente. Disponible: $${expense.project.budgetRemaining.toFixed(2)}`,
-      },
-      { status: 400 },
-    );
-
+  // No se bloquea por presupuesto: si se pasa, el saldo queda en rojo y la
+  // pantalla avisa. La obra tiene que poder reflejar lo que pasó de verdad.
   const actualizado = await prisma.$transaction(async (tx) => {
     const e = await tx.expense.update({
       where: { id: params.id },

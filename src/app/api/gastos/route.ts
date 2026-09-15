@@ -33,14 +33,8 @@ export async function POST(req: NextRequest) {
   if (!project)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  if (project.budgetRemaining < amount)
-    return NextResponse.json(
-      {
-        error: `Presupuesto insuficiente. Disponible: $${project.budgetRemaining.toFixed(2)}`,
-      },
-      { status: 400 },
-    );
-
+  // No se bloquea por presupuesto: si se pasa, el saldo queda en rojo y la
+  // pantalla avisa. La obra tiene que poder reflejar lo que pasó de verdad.
   const expense = await prisma.$transaction(async (tx) => {
     const e = await tx.expense.create({
       data: {

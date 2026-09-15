@@ -666,6 +666,20 @@ export default function ObraDetailPage() {
     fetchProject();
   }
 
+  /** Abre el modal de editar material con los datos cargados. */
+  function abrirEditItem(item: MaterialItem) {
+    setEditingItem(item);
+    setItemError("");
+    setEditItemForm({
+      name: item.name,
+      quantityOrdered: String(item.quantityOrdered),
+      quantityReceived: String(item.quantityReceived),
+      unit: item.unit,
+      unitPrice: item.unitPrice ? String(item.unitPrice) : "",
+      notes: item.notes ?? "",
+    });
+  }
+
   async function deleteItem(itemId: string) {
     if (!confirm("¿Eliminar este material del pedido?")) return;
     await fetch(`/api/materiales/${itemId}`, { method: "DELETE" });
@@ -812,7 +826,7 @@ export default function ObraDetailPage() {
       {/* ─── MODALS ─────────────────────────────────────────── */}
       {editingPedido && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
             <h3 className="font-bold text-slate-800 mb-4">Editar pedido</h3>
             <div className="space-y-3">
               <input
@@ -833,6 +847,27 @@ export default function ObraDetailPage() {
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 placeholder="Proveedor (opcional)"
               />
+              <div className="bg-slate-50 border border-slate-100 rounded-xl px-3 py-2">
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  El precio no se carga acá: va en cada material del pedido (con
+                  el lápiz del material o el botón{" "}
+                  <span className="font-semibold text-primary-700">
+                    + Poner precio
+                  </span>
+                  ).
+                </p>
+                {(() => {
+                  const totalPedido = (editingPedido.items ?? []).reduce(
+                    (sum, i) => sum + (i.unitPrice ?? 0) * i.quantityOrdered,
+                    0,
+                  );
+                  return totalPedido > 0 ? (
+                    <p className="text-xs text-slate-700 font-semibold mt-1">
+                      Total del pedido: {formatCurrency(totalPedido)}
+                    </p>
+                  ) : null;
+                })()}
+              </div>
               <input
                 type="date"
                 value={editPedidoForm.orderDate}
@@ -866,7 +901,7 @@ export default function ObraDetailPage() {
 
       {editingCobro && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
             <h3 className="font-bold text-slate-800 mb-1">Editar cobro</h3>
             <p className="text-xs text-slate-400 mb-4">
               El total cobrado se recalcula solo
@@ -945,7 +980,7 @@ export default function ObraDetailPage() {
 
       {editingGasto && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
             <h3 className="font-bold text-slate-800 mb-1">Editar gasto extra</h3>
             <p className="text-xs text-slate-400 mb-4">
               El presupuesto restante se ajusta solo con la diferencia
@@ -1034,7 +1069,7 @@ export default function ObraDetailPage() {
 
       {editingItem && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
             <h3 className="font-bold text-slate-800 mb-1">Editar material</h3>
             <p className="text-xs text-slate-400 mb-4">
               Ajustá lo pedido y lo que realmente llegó
@@ -1049,6 +1084,35 @@ export default function ObraDetailPage() {
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
                 placeholder="Material"
               />
+              <div className="bg-primary-50/60 border border-primary-100 rounded-xl p-3">
+                <label className="text-xs text-primary-900 font-semibold mb-1 block">
+                  Precio por unidad (opcional)
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                    $
+                  </span>
+                  <input
+                    type="number"
+                    value={editItemForm.unitPrice}
+                    onChange={(e) =>
+                      setEditItemForm((p) => ({
+                        ...p,
+                        unitPrice: e.target.value,
+                      }))
+                    }
+                    min="0"
+                    step="0.01"
+                    className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-primary-200 bg-white focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm"
+                    placeholder="0.00"
+                  />
+                </div>
+                <p className="text-xs text-primary-800/70 mt-1.5">
+                  {parseNum(editItemForm.unitPrice) > 0
+                    ? `Total del material: ${formatCurrency(parseNum(editItemForm.unitPrice) * parseNum(editItemForm.quantityOrdered))}`
+                    : "Sin precio: no descuenta del presupuesto"}
+                </p>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="text-xs text-slate-500 font-medium mb-1 block">
@@ -1086,35 +1150,6 @@ export default function ObraDetailPage() {
                     className="w-full px-3.5 py-2.5 rounded-xl border border-green-200 bg-green-50/50 focus:outline-none focus:ring-2 focus:ring-green-400 text-sm"
                   />
                 </div>
-              </div>
-              <div>
-                <label className="text-xs text-slate-500 font-medium mb-1 block">
-                  Precio por unidad (opcional)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
-                    $
-                  </span>
-                  <input
-                    type="number"
-                    value={editItemForm.unitPrice}
-                    onChange={(e) =>
-                      setEditItemForm((p) => ({
-                        ...p,
-                        unitPrice: e.target.value,
-                      }))
-                    }
-                    min="0"
-                    step="0.01"
-                    className="w-full pl-7 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                    placeholder="0.00"
-                  />
-                </div>
-                <p className="text-xs text-slate-400 mt-1">
-                  {parseNum(editItemForm.unitPrice) > 0
-                    ? `Total del material: ${formatCurrency(parseNum(editItemForm.unitPrice) * parseNum(editItemForm.quantityOrdered))}`
-                    : "Sin precio: no descuenta del presupuesto"}
-                </p>
               </div>
               <div>
                 <label className="text-xs text-slate-500 font-medium mb-1 block">
@@ -1173,7 +1208,7 @@ export default function ObraDetailPage() {
 
       {editingObra && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
             <h3 className="font-bold text-slate-800 mb-4">Editar obra</h3>
             <div className="space-y-3">
               <input
@@ -1319,7 +1354,7 @@ export default function ObraDetailPage() {
 
       {editingEmp && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
             <h3 className="font-bold text-slate-800 mb-4">Editar empleado</h3>
             <EmpForm
               form={editEmpForm}
@@ -1335,7 +1370,7 @@ export default function ObraDetailPage() {
 
       {showFinalizar && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl">
+          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl max-h-[88vh] overflow-y-auto">
             <div className="text-3xl text-center mb-3">🏁</div>
             <h3 className="font-bold text-slate-800 mb-2 text-center">
               ¿Finalizar esta obra?
@@ -1371,7 +1406,7 @@ export default function ObraDetailPage() {
               {cobrado > 0 ? "Plata disponible" : "Presupuesto restante"}
             </p>
             <p
-              className={`text-3xl font-bold mt-0.5 ${cobrado > 0 && disponible < 0 ? "text-red-300" : ""}`}
+              className={`text-3xl font-bold mt-0.5 ${(cobrado > 0 ? disponible : project.budgetRemaining) < 0 ? "text-red-300" : ""}`}
             >
               {formatCurrency(cobrado > 0 ? disponible : project.budgetRemaining)}
             </p>
@@ -1426,6 +1461,19 @@ export default function ObraDetailPage() {
           </div>
         )}
 
+        {project.budgetRemaining < 0 && (
+          <div className="mt-2.5 bg-amber-500/20 border border-amber-400/40 rounded-xl px-3 py-2">
+            <p className="text-amber-100 text-xs font-semibold">
+              Te pasaste del presupuesto en{" "}
+              {formatCurrency(Math.abs(project.budgetRemaining))}
+            </p>
+            <p className="text-amber-100/80 text-xs">
+              La obra ya cuesta más de lo que cotizaste. Podés seguir cargando
+              igual.
+            </p>
+          </div>
+        )}
+
         {cobrado === 0 && !isFinished && (
           <button
             onClick={() => {
@@ -1467,7 +1515,9 @@ export default function ObraDetailPage() {
 
         {cobrado > 0 && (
           <div className="mt-2 pt-2 border-t border-primary-700 flex justify-between text-xs text-primary-300">
-            <span>
+            <span
+              className={project.budgetRemaining < 0 ? "text-red-300" : ""}
+            >
               Saldo del presupuesto: {formatCurrency(project.budgetRemaining)}
             </span>
             <span>{budgetPct.toFixed(0)}% restante</span>
@@ -2308,7 +2358,7 @@ export default function ObraDetailPage() {
                                       </>
                                     )}
                                   </p>
-                                  {(item.unitPrice ?? 0) > 0 && (
+                                  {(item.unitPrice ?? 0) > 0 ? (
                                     <p className="text-xs text-slate-600 font-medium mt-0.5">
                                       {formatCurrency(item.unitPrice)} c/u ·{" "}
                                       <span className="text-primary-700 font-semibold">
@@ -2317,6 +2367,15 @@ export default function ObraDetailPage() {
                                         )}
                                       </span>
                                     </p>
+                                  ) : (
+                                    !isFinished && (
+                                      <button
+                                        onClick={() => abrirEditItem(item)}
+                                        className="text-xs text-primary-700 font-semibold mt-0.5 underline decoration-primary-300 underline-offset-2"
+                                      >
+                                        + Poner precio
+                                      </button>
+                                    )
                                   )}
                                   {item.notes && (
                                     <p className="text-xs text-slate-400 italic mt-0.5">
@@ -2328,23 +2387,7 @@ export default function ObraDetailPage() {
                                 {!isFinished && (
                                   <div className="flex items-center gap-1 shrink-0">
                                     <button
-                                      onClick={() => {
-                                        setEditingItem(item);
-                                        setEditItemForm({
-                                          name: item.name,
-                                          quantityOrdered: String(
-                                            item.quantityOrdered,
-                                          ),
-                                          quantityReceived: String(
-                                            item.quantityReceived,
-                                          ),
-                                          unit: item.unit,
-                                          unitPrice: item.unitPrice
-                                            ? String(item.unitPrice)
-                                            : "",
-                                          notes: item.notes ?? "",
-                                        });
-                                      }}
+                                      onClick={() => abrirEditItem(item)}
                                       className="p-1.5 text-slate-400 hover:text-primary-600 transition"
                                     >
                                       <svg

@@ -60,16 +60,8 @@ export async function POST(
 
   const totalPaid = paymentData.reduce((sum, p) => sum + p.amount, 0);
 
-  // Solo verificar presupuesto si hay algo que pagar
-  if (totalPaid > 0 && payroll.project.budgetRemaining < totalPaid) {
-    return NextResponse.json(
-      {
-        error: `Presupuesto insuficiente. Disponible: $${payroll.project.budgetRemaining.toFixed(2)}, requerido: $${totalPaid.toFixed(2)}`,
-      },
-      { status: 400 },
-    );
-  }
-
+  // No se bloquea por presupuesto: si se pasa, el saldo queda en rojo y la
+  // pantalla avisa. La obra tiene que poder reflejar lo que pasó de verdad.
   await prisma.payment.deleteMany({ where: { payrollId: payroll.id } });
 
   // Si totalPaid es 0 (semana libre), solo cerrar la semana sin tocar el presupuesto

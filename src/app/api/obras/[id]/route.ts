@@ -90,7 +90,7 @@ export async function PUT(
 
   if (data.budget !== undefined && data.budget !== existing.budget) {
     const diff = data.budget - existing.budget;
-    updateData.budgetRemaining = Math.max(0, existing.budgetRemaining + diff);
+    updateData.budgetRemaining = existing.budgetRemaining + diff;
   }
 
   const project = await prisma.project.update({

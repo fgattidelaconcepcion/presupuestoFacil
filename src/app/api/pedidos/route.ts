@@ -72,13 +72,6 @@ export async function POST(req: NextRequest) {
 
   // Los materiales con precio descuentan del presupuesto al cargarse.
   const costo = orderCost(items ?? []);
-  if (costo > 0 && project.budgetRemaining < costo)
-    return NextResponse.json(
-      {
-        error: `Presupuesto insuficiente. Disponible: $${project.budgetRemaining.toFixed(2)}, requerido: $${costo.toFixed(2)}`,
-      },
-      { status: 400 },
-    );
 
   const order = await prisma.$transaction(async (tx) => {
     const created = await tx.materialOrder.create({
