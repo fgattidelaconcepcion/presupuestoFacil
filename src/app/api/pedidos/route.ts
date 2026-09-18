@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { orderCost } from "@/lib/materiales";
 import { z } from "zod";
 
 const itemSchema = z.object({
@@ -70,11 +69,10 @@ export async function POST(req: NextRequest) {
   if (!project)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  // Los materiales con precio descuentan del presupuesto al cargarse.
-  const costo = orderCost(items ?? []);
-
-  const order = await prisma.$transaction(async (tx) => {
-    const created = await tx.materialOrder.create({
+  // Un pedido nuevo no descuenta nada: el precio se descuenta cuando el
+  // material se marca como recibido (total o parcial).
+  const order = await (async () => {
+    const created = await prisma.materialOrder.create({
       data: {
         projectId,
         name,
@@ -99,14 +97,8 @@ export async function POST(req: NextRequest) {
       include: { items: { orderBy: { createdAt: "asc" } } },
     });
 
-    if (costo > 0)
-      await tx.project.update({
-        where: { id: projectId },
-        data: { budgetRemaining: { decrement: costo } },
-      });
-
     return created;
-  });
+  })();
 
   return NextResponse.json(order, { status: 201 });
 }

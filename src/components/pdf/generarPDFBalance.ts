@@ -81,9 +81,10 @@ export async function generarPDFBalance(
 
   const totalEmployeeCost = empSummaries.reduce((s, e) => s + e.totalAmount, 0);
   const totalExpenses = project.expenses.reduce((s, e) => s + e.amount, 0);
+  // Los materiales descuentan por lo RECIBIDO, igual que en la app.
   const totalMateriales = (project.materialOrders ?? [])
     .flatMap((o) => o.items ?? [])
-    .reduce((s, i) => s + (i.unitPrice ?? 0) * i.quantityOrdered, 0);
+    .reduce((s, i) => s + (i.unitPrice ?? 0) * i.quantityReceived, 0);
   const totalSpent = totalEmployeeCost + totalExpenses + totalMateriales;
   const budgetUsedPct = ((totalSpent / project.budget) * 100).toFixed(1);
   const cobrado = project.advanceAmount ?? 0;

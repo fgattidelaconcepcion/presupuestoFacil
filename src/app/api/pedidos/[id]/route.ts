@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getOrderOwned, orderCost } from "@/lib/materiales";
+import { getOrderOwned, orderSpent } from "@/lib/materiales";
 import { z } from "zod";
 
 const updateSchema = z.object({
@@ -81,11 +81,11 @@ export async function DELETE(
   if (!owned)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  // Los materiales con precio devuelven su plata al presupuesto.
+  // Vuelve al presupuesto lo que el pedido ya había descontado (lo recibido).
   const items = await prisma.materialItem.findMany({
     where: { orderId: params.id },
   });
-  const costo = orderCost(items);
+  const costo = orderSpent(items);
 
   await prisma.$transaction(async (tx) => {
     await tx.materialOrder.delete({ where: { id: params.id } });

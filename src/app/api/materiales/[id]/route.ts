@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getItemOwned, itemCost, recalcOrderStatus } from "@/lib/materiales";
+import { getItemOwned, itemSpent, recalcOrderStatus } from "@/lib/materiales";
 import { z } from "zod";
 
 const updateSchema = z.object({
@@ -60,11 +60,12 @@ export async function PUT(
     received = true;
   if (quantityReceived === 0) received = false;
 
-  // El presupuesto se ajusta SOLO por la diferencia de costo del material
-  // (precio unitario × cantidad pedida), igual que en los gastos extras.
+  // El presupuesto se ajusta por la diferencia de lo RECIBIDO:
+  // precio unitario × cantidad que llegó. Marcar recibido descuenta,
+  // desmarcar devuelve la plata, y una entrega parcial descuenta su parte.
   const unitPrice = d.unitPrice ?? existing.unitPrice;
-  const costoAnterior = itemCost(existing.unitPrice, existing.quantityOrdered);
-  const costoNuevo = itemCost(unitPrice, quantityOrdered);
+  const costoAnterior = itemSpent(existing);
+  const costoNuevo = itemSpent({ unitPrice, quantityReceived });
   const diferencia = Math.round((costoNuevo - costoAnterior) * 100) / 100;
 
   const project = existing.order.project;
@@ -114,8 +115,8 @@ export async function DELETE(
   if (!existing)
     return NextResponse.json({ error: "No encontrado" }, { status: 404 });
 
-  // Al borrar un material con precio, esa plata vuelve al presupuesto.
-  const costo = itemCost(existing.unitPrice, existing.quantityOrdered);
+  // Al borrar un material, vuelve al presupuesto lo que se había descontado.
+  const costo = itemSpent(existing);
 
   await prisma.$transaction(async (tx) => {
     await tx.materialItem.delete({ where: { id: params.id } });

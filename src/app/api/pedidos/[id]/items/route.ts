@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getOrderOwned, itemCost, recalcOrderStatus } from "@/lib/materiales";
+import { getOrderOwned, recalcOrderStatus } from "@/lib/materiales";
 import { z } from "zod";
 
 const createSchema = z.object({
@@ -37,30 +37,19 @@ export async function POST(
 
   const { name, unit, quantityOrdered, unitPrice, notes } = parsed.data;
 
-  // Si el material tiene precio, se descuenta del presupuesto al cargarlo.
-  const costo = itemCost(unitPrice, quantityOrdered);
-
-  const item = await prisma.$transaction(async (tx) => {
-    const created = await tx.materialItem.create({
-      data: {
-        orderId: params.id,
-        name,
-        unit: unit || "un",
-        quantityOrdered,
-        quantityReceived: 0,
-        received: false,
-        unitPrice: unitPrice ?? 0,
-        notes: notes || null,
-      },
-    });
-
-    if (costo > 0)
-      await tx.project.update({
-        where: { id: owned.projectId },
-        data: { budgetRemaining: { decrement: costo } },
-      });
-
-    return created;
+  // No descuenta nada todavía: el precio se descuenta cuando el material se
+  // marca como recibido (total o parcial).
+  const item = await prisma.materialItem.create({
+    data: {
+      orderId: params.id,
+      name,
+      unit: unit || "un",
+      quantityOrdered,
+      quantityReceived: 0,
+      received: false,
+      unitPrice: unitPrice ?? 0,
+      notes: notes || null,
+    },
   });
 
   await recalcOrderStatus(params.id);

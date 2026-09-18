@@ -731,10 +731,18 @@ export default function ObraDetailPage() {
   const allMatItems = orders.flatMap((o) => o.items);
 
   // ── Plata: adelanto cobrado vs. gastado ──────────────────────────
+  /** Lo que los materiales ya descontaron: precio × lo que llegó. */
   const totalMateriales = allMatItems.reduce(
+    (s, i) => s + (i.unitPrice ?? 0) * i.quantityReceived,
+    0,
+  );
+  /** Lo que valen los pedidos completos (todavía no descontado del todo). */
+  const materialesPedidos = allMatItems.reduce(
     (s, i) => s + (i.unitPrice ?? 0) * i.quantityOrdered,
     0,
   );
+  /** Plata comprometida: materiales con precio que faltan llegar. */
+  const materialesPorLlegar = Math.max(0, materialesPedidos - totalMateriales);
   const gastado = project.budget - project.budgetRemaining;
   const totalPersonal = Math.max(0, gastado - totalExpenses - totalMateriales);
   /** Plata que el cliente ya entregó (suma de los cobros). */
@@ -1983,9 +1991,17 @@ export default function ObraDetailPage() {
                   </span>
                 </p>
               )}
-              {totalMateriales > 0 && (
-                <p className="text-xs text-primary-700 font-semibold mt-0.5">
-                  {formatCurrency(totalMateriales)} en materiales
+              {materialesPedidos > 0 && (
+                <p className="text-xs mt-0.5">
+                  <span className="text-primary-700 font-semibold">
+                    {formatCurrency(totalMateriales)} descontado
+                  </span>
+                  {materialesPorLlegar > 0 && (
+                    <span className="text-slate-400">
+                      {" · "}
+                      {formatCurrency(materialesPorLlegar)} por llegar
+                    </span>
+                  )}
                 </p>
               )}
             </div>
@@ -2140,6 +2156,10 @@ export default function ObraDetailPage() {
                   (s, i) => s + (i.unitPrice ?? 0) * i.quantityOrdered,
                   0,
                 );
+                const descontadoPedido = order.items.reduce(
+                  (s, i) => s + (i.unitPrice ?? 0) * i.quantityReceived,
+                  0,
+                );
                 const estadoColor =
                   total === 0
                     ? "bg-slate-100 text-slate-500"
@@ -2200,6 +2220,10 @@ export default function ObraDetailPage() {
                             {costoPedido > 0 && (
                               <p className="text-xs text-primary-700 font-semibold">
                                 {formatCurrency(costoPedido)}
+                                <span className="text-slate-400 font-normal">
+                                  {" · descontado "}
+                                  {formatCurrency(descontadoPedido)}
+                                </span>
                               </p>
                             )}
                           </div>
@@ -2359,14 +2383,33 @@ export default function ObraDetailPage() {
                                     )}
                                   </p>
                                   {(item.unitPrice ?? 0) > 0 ? (
-                                    <p className="text-xs text-slate-600 font-medium mt-0.5">
-                                      {formatCurrency(item.unitPrice)} c/u ·{" "}
-                                      <span className="text-primary-700 font-semibold">
-                                        {formatCurrency(
-                                          item.unitPrice * item.quantityOrdered,
+                                    <>
+                                      <p className="text-xs text-slate-600 font-medium mt-0.5">
+                                        {formatCurrency(item.unitPrice)} c/u ·{" "}
+                                        <span className="text-primary-700 font-semibold">
+                                          {formatCurrency(
+                                            item.unitPrice *
+                                              item.quantityOrdered,
+                                          )}
+                                        </span>
+                                      </p>
+                                      <p className="text-xs mt-0.5">
+                                        {item.quantityReceived > 0 ? (
+                                          <span className="text-green-700 font-semibold">
+                                            Descontado:{" "}
+                                            {formatCurrency(
+                                              item.unitPrice *
+                                                item.quantityReceived,
+                                            )}
+                                          </span>
+                                        ) : (
+                                          <span className="text-slate-400">
+                                            Se descuenta cuando lo marques como
+                                            recibido
+                                          </span>
                                         )}
-                                      </span>
-                                    </p>
+                                      </p>
+                                    </>
                                   ) : (
                                     !isFinished && (
                                       <button

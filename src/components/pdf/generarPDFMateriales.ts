@@ -70,6 +70,10 @@ export async function generarPDFMateriales(
     (acc, i) => acc + (i.unitPrice ?? 0) * i.quantityOrdered,
     0,
   );
+  const totalDescontado = allItems.reduce(
+    (acc, i) => acc + (i.unitPrice ?? 0) * i.quantityReceived,
+    0,
+  );
   const totalItems = allItems.length;
   const completos = allItems.filter((i) => estadoItem(i) === "Completo").length;
   const parciales = allItems.filter((i) => estadoItem(i) === "Parcial").length;
@@ -163,6 +167,16 @@ export async function generarPDFMateriales(
     doc.setTextColor(...dark);
     doc.text(
       `Total en materiales: ${fmtMoney(totalMateriales)}`,
+      pageW - 14,
+      y,
+      { align: "right" },
+    );
+    y += 5;
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      `Ya descontado del presupuesto (recibido): ${fmtMoney(totalDescontado)}`,
       pageW - 14,
       y,
       { align: "right" },

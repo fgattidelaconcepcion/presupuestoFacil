@@ -3,20 +3,42 @@ import { prisma } from "@/lib/prisma";
 export type OrderStatus = "pending" | "partial" | "complete";
 
 /**
- * Costo de una línea de material = precio unitario × cantidad pedida.
- * Si no se cargó precio (0), la línea no cuesta nada y no toca el presupuesto.
+ * Precio × cantidad, redondeado a 2 decimales.
+ * Sin precio cargado (0) la línea no vale nada y no toca el presupuesto.
  */
 export function itemCost(
   unitPrice?: number | null,
-  quantityOrdered?: number | null,
+  cantidad?: number | null,
 ): number {
-  const c = (unitPrice ?? 0) * (quantityOrdered ?? 0);
+  const c = (unitPrice ?? 0) * (cantidad ?? 0);
   if (!Number.isFinite(c) || c <= 0) return 0;
   return Math.round(c * 100) / 100;
 }
 
-/** Costo total de un pedido (suma de las líneas que tienen precio). */
-export function orderCost(
+/**
+ * Lo que un material DESCUENTA del presupuesto: precio × cantidad RECIBIDA.
+ * Mientras no llega nada no descuenta; si llega parcial, descuenta esa parte.
+ */
+export function itemSpent(item: {
+  unitPrice?: number | null;
+  quantityReceived?: number | null;
+}): number {
+  return itemCost(item.unitPrice, item.quantityReceived);
+}
+
+/** Lo que ya descontó un pedido (suma de lo recibido de cada material). */
+export function orderSpent(
+  items: { unitPrice?: number | null; quantityReceived?: number | null }[],
+): number {
+  const total = items.reduce((s, i) => s + itemSpent(i), 0);
+  return Math.round(total * 100) / 100;
+}
+
+/**
+ * Lo que vale el pedido completo (precio × cantidad PEDIDA): plata
+ * comprometida, todavía no descontada si el material no llegó.
+ */
+export function orderCommitted(
   items: { unitPrice?: number | null; quantityOrdered?: number | null }[],
 ): number {
   const total = items.reduce(
