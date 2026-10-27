@@ -10,6 +10,7 @@ const itemSchema = z.object({
   quantityOrdered: z.number().positive("La cantidad debe ser mayor a 0"),
   /** Precio por unidad. 0 o vacío = sin precio (no descuenta del presupuesto). */
   unitPrice: z.number().min(0).optional(),
+  itemDate: z.string().optional(),
   notes: z.string().max(300).nullable().optional(),
 });
 
@@ -89,6 +90,7 @@ export async function POST(req: NextRequest) {
                 quantityReceived: 0,
                 received: false,
                 unitPrice: i.unitPrice ?? 0,
+                itemDate: i.itemDate ? new Date(i.itemDate) : new Date(),
                 notes: i.notes || null,
               })),
             }

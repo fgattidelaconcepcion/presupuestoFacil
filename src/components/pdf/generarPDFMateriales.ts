@@ -246,7 +246,13 @@ export async function generarPDFMateriales(
       const precio = i.unitPrice ?? 0;
       return [
         String(idx + 1),
-        i.notes ? `${i.name}\n${i.notes}` : i.name,
+        [
+          i.name,
+          fmtDate((i.itemDate ?? i.createdAt) as string),
+          i.notes || null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
         i.unit,
         num(i.quantityOrdered),
         num(i.quantityReceived),

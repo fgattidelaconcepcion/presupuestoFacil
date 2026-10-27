@@ -11,6 +11,7 @@ const updateSchema = z.object({
   quantityOrdered: z.number().positive().optional(),
   quantityReceived: z.number().min(0).optional(),
   unitPrice: z.number().min(0).optional(),
+  itemDate: z.string().optional(),
   received: z.boolean().optional(),
   notes: z.string().max(300).nullable().optional(),
 });
@@ -80,6 +81,7 @@ export async function PUT(
         quantityReceived,
         received,
         unitPrice,
+        itemDate: d.itemDate ? new Date(d.itemDate) : existing.itemDate,
         receivedAt: received
           ? (existing.receivedAt ?? new Date())
           : quantityReceived > 0

@@ -151,8 +151,10 @@ export default function ObraDetailPage() {
     quantityOrdered: "",
     unit: "un",
     unitPrice: "",
+    itemDate: new Date().toISOString().split("T")[0],
     notes: "",
   });
+  const [recibiendoPedido, setRecibiendoPedido] = useState<string | null>(null);
   const [itemLoading, setItemLoading] = useState(false);
   const [itemError, setItemError] = useState("");
   const [editingItem, setEditingItem] = useState<MaterialItem | null>(null);
@@ -162,6 +164,7 @@ export default function ObraDetailPage() {
     quantityReceived: "",
     unit: "un",
     unitPrice: "",
+    itemDate: "",
     notes: "",
   });
   const [editingPedido, setEditingPedido] = useState<MaterialOrder | null>(
@@ -576,6 +579,7 @@ export default function ObraDetailPage() {
         unit: itemForm.unit || "un",
         quantityOrdered: parseNum(itemForm.quantityOrdered),
         unitPrice: parseNum(itemForm.unitPrice),
+        itemDate: itemForm.itemDate,
         notes: itemForm.notes || null,
       }),
     });
@@ -590,6 +594,7 @@ export default function ObraDetailPage() {
       quantityOrdered: "",
       unit: itemForm.unit,
       unitPrice: "",
+      itemDate: itemForm.itemDate,
       notes: "",
     });
     await fetchProject();
@@ -653,6 +658,7 @@ export default function ObraDetailPage() {
         quantityOrdered: parseNum(editItemForm.quantityOrdered),
         quantityReceived: parseNum(editItemForm.quantityReceived),
         unitPrice: parseNum(editItemForm.unitPrice),
+        itemDate: editItemForm.itemDate || undefined,
         notes: editItemForm.notes || null,
       }),
     });
@@ -666,6 +672,11 @@ export default function ObraDetailPage() {
     fetchProject();
   }
 
+  /** Fecha del material: la suya si la tiene, si no la de cuando se cargó. */
+  function fechaItem(item: MaterialItem): string {
+    return item.itemDate ?? item.createdAt;
+  }
+
   /** Abre el modal de editar material con los datos cargados. */
   function abrirEditItem(item: MaterialItem) {
     setEditingItem(item);
@@ -676,8 +687,21 @@ export default function ObraDetailPage() {
       quantityReceived: String(item.quantityReceived),
       unit: item.unit,
       unitPrice: item.unitPrice ? String(item.unitPrice) : "",
+      itemDate: new Date(fechaItem(item)).toISOString().split("T")[0],
       notes: item.notes ?? "",
     });
+  }
+
+  /** Marca o desmarca de una vez todos los materiales de un pedido. */
+  async function recibirTodoPedido(orderId: string, received: boolean) {
+    setRecibiendoPedido(orderId);
+    await fetch(`/api/pedidos/${orderId}/recibir`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ received }),
+    });
+    setRecibiendoPedido(null);
+    fetchProject();
   }
 
   async function deleteItem(itemId: string) {
@@ -1159,23 +1183,41 @@ export default function ObraDetailPage() {
                   />
                 </div>
               </div>
-              <div>
-                <label className="text-xs text-slate-500 font-medium mb-1 block">
-                  Unidad
-                </label>
-                <select
-                  value={editItemForm.unit}
-                  onChange={(e) =>
-                    setEditItemForm((p) => ({ ...p, unit: e.target.value }))
-                  }
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
-                >
-                  {UNIDADES.map((u) => (
-                    <option key={u} value={u}>
-                      {u}
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs text-slate-500 font-medium mb-1 block">
+                    Unidad
+                  </label>
+                  <select
+                    value={editItemForm.unit}
+                    onChange={(e) =>
+                      setEditItemForm((p) => ({ ...p, unit: e.target.value }))
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm"
+                  >
+                    {UNIDADES.map((u) => (
+                      <option key={u} value={u}>
+                        {u}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-500 font-medium mb-1 block">
+                    Fecha del material
+                  </label>
+                  <input
+                    type="date"
+                    value={editItemForm.itemDate}
+                    onChange={(e) =>
+                      setEditItemForm((p) => ({
+                        ...p,
+                        itemDate: e.target.value,
+                      }))
+                    }
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-500 text-sm text-slate-600"
+                  />
+                </div>
               </div>
               <input
                 type="text"
@@ -2218,13 +2260,20 @@ export default function ObraDetailPage() {
                               {order.supplier ? ` · ${order.supplier}` : ""}
                             </p>
                             {costoPedido > 0 && (
-                              <p className="text-xs text-primary-700 font-semibold">
-                                {formatCurrency(costoPedido)}
-                                <span className="text-slate-400 font-normal">
-                                  {" · descontado "}
-                                  {formatCurrency(descontadoPedido)}
+                              <div className="mt-1 flex items-baseline gap-1.5 flex-wrap">
+                                <span className="text-base font-bold text-primary-700">
+                                  {formatCurrency(costoPedido)}
                                 </span>
-                              </p>
+                                <span className="text-xs text-slate-400">
+                                  total del pedido
+                                </span>
+                                {descontadoPedido > 0 && (
+                                  <span className="text-xs text-green-700 font-semibold">
+                                    · {formatCurrency(descontadoPedido)}{" "}
+                                    descontado
+                                  </span>
+                                )}
+                              </div>
                             )}
                           </div>
                         </button>
@@ -2285,6 +2334,52 @@ export default function ObraDetailPage() {
                           )}
                         </div>
                       </div>
+
+                      {/* Marcar/desmarcar todo el pedido de una */}
+                      {!isFinished && total > 0 && (
+                        <button
+                          onClick={() =>
+                            recibirTodoPedido(order.id, completos !== total)
+                          }
+                          disabled={recibiendoPedido === order.id}
+                          className={`mt-2.5 w-full flex items-center gap-2 px-2.5 py-2 rounded-xl border transition disabled:opacity-60 ${
+                            completos === total
+                              ? "border-green-200 bg-green-50/60"
+                              : "border-slate-200 hover:border-green-300 hover:bg-green-50/40"
+                          }`}
+                        >
+                          <span
+                            className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition ${
+                              completos === total
+                                ? "bg-green-500 border-green-500"
+                                : "border-slate-300"
+                            }`}
+                          >
+                            {completos === total && (
+                              <svg
+                                className="w-3 h-3 text-white"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={3.5}
+                                  d="M5 13l4 4L19 7"
+                                />
+                              </svg>
+                            )}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-600 text-left">
+                            {recibiendoPedido === order.id
+                              ? "Guardando..."
+                              : completos === total
+                                ? "Pedido recibido entero — tocá para desmarcar"
+                                : `Marcar los ${total} materiales como recibidos`}
+                          </span>
+                        </button>
+                      )}
 
                       {/* Barra de progreso */}
                       {total > 0 && (
@@ -2363,6 +2458,10 @@ export default function ObraDetailPage() {
                                     {item.name}
                                   </p>
                                   <p className="text-xs text-slate-400">
+                                    <span className="text-slate-500 font-medium">
+                                      {formatDate(fechaItem(item))}
+                                    </span>
+                                    {" · "}
                                     Pedido: {item.quantityOrdered} {item.unit}
                                     {item.quantityReceived > 0 && (
                                       <>
@@ -2552,7 +2651,7 @@ export default function ObraDetailPage() {
                                     ))}
                                   </select>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 items-center">
+                                <div className="grid grid-cols-2 gap-2">
                                   <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
                                       $
@@ -2572,21 +2671,33 @@ export default function ObraDetailPage() {
                                       placeholder="Precio c/u"
                                     />
                                   </div>
-                                  <p className="text-xs text-right pr-1">
-                                    {parseNum(itemForm.unitPrice) > 0 ? (
-                                      <span className="text-slate-700 font-semibold">
-                                        {formatCurrency(
-                                          parseNum(itemForm.unitPrice) *
-                                            parseNum(itemForm.quantityOrdered),
-                                        )}
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400">
-                                        Sin precio
-                                      </span>
-                                    )}
-                                  </p>
+                                  <input
+                                    type="date"
+                                    value={itemForm.itemDate}
+                                    onChange={(e) =>
+                                      setItemForm((p) => ({
+                                        ...p,
+                                        itemDate: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full px-3 py-2 rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-primary-400 text-sm text-slate-600"
+                                  />
                                 </div>
+                                <p className="text-xs text-right pr-1">
+                                  {parseNum(itemForm.unitPrice) > 0 ? (
+                                    <span className="text-slate-700 font-semibold">
+                                      Total:{" "}
+                                      {formatCurrency(
+                                        parseNum(itemForm.unitPrice) *
+                                          parseNum(itemForm.quantityOrdered),
+                                      )}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400">
+                                      Sin precio
+                                    </span>
+                                  )}
+                                </p>
                                 {itemError && (
                                   <p className="text-red-500 text-xs">
                                     {itemError}
@@ -2597,13 +2708,13 @@ export default function ObraDetailPage() {
                                     onClick={() => {
                                       setAddItemFor(null);
                                       setItemError("");
-                                      setItemForm({
+                                      setItemForm((p) => ({
+                                        ...p,
                                         name: "",
                                         quantityOrdered: "",
-                                        unit: "un",
                                         unitPrice: "",
                                         notes: "",
-                                      });
+                                      }));
                                     }}
                                     className="flex-1 py-2 rounded-lg border border-slate-200 text-slate-500 text-xs"
                                   >

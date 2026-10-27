@@ -134,6 +134,8 @@ model MaterialItem {
   quantityOrdered  Float         @default(1)
   quantityReceived Float         @default(0)
   unitPrice        Float         @default(0)
+  /// Fecha en que se pidió ESTE material. Si es null se usa createdAt.
+  itemDate         DateTime?
   received         Boolean       @default(false)
   receivedAt       DateTime?
   notes            String?

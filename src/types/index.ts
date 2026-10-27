@@ -88,6 +88,8 @@ export interface MaterialItem {
   quantityReceived: number;
   /** Precio por unidad. 0 = sin precio cargado (no descuenta del presupuesto). */
   unitPrice: number;
+  /** Fecha del material. Si viene null, se muestra createdAt. */
+  itemDate?: string | null;
   received: boolean;
   receivedAt?: string | null;
   notes?: string | null;

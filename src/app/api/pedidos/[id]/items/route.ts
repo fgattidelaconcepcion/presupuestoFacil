@@ -11,6 +11,8 @@ const createSchema = z.object({
   quantityOrdered: z.number().positive("La cantidad debe ser mayor a 0"),
   /** Precio por unidad. 0 o vacío = sin precio (no descuenta del presupuesto). */
   unitPrice: z.number().min(0).optional(),
+  /** Fecha en que se pidió este material. Por defecto, hoy. */
+  itemDate: z.string().optional(),
   notes: z.string().max(300).nullable().optional(),
 });
 
@@ -35,7 +37,8 @@ export async function POST(
       { status: 400 },
     );
 
-  const { name, unit, quantityOrdered, unitPrice, notes } = parsed.data;
+  const { name, unit, quantityOrdered, unitPrice, itemDate, notes } =
+    parsed.data;
 
   // No descuenta nada todavía: el precio se descuenta cuando el material se
   // marca como recibido (total o parcial).
@@ -48,6 +51,7 @@ export async function POST(
       quantityReceived: 0,
       received: false,
       unitPrice: unitPrice ?? 0,
+      itemDate: itemDate ? new Date(itemDate) : new Date(),
       notes: notes || null,
     },
   });
